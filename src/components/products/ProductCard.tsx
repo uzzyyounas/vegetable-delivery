@@ -106,12 +106,12 @@ export default function ProductCard({ product, onAddToCart }: ProductCardProps) 
                 {/* Price Display */}
                 <div className="flex items-baseline justify-between mb-3">
                     <div>
-                        <span className="text-2xl font-bold text-green-600">₹{currentPrice.toFixed(2)}</span>
+                        <span className="text-2xl font-bold text-green-600">Rs.{currentPrice.toFixed(2)}</span>
                         <span className="text-sm text-gray-500 ml-1">/ {formatWeight(selectedWeight)}</span>
                     </div>
                     {product.pricing_type === 'daily' && product.daily_price && (
                         <span className="text-xs text-gray-500">
-              ₹{product.daily_price.price_per_kg}/kg
+              Rs.{product.daily_price.price_per_kg}/kg
             </span>
                     )}
                 </div>
@@ -142,7 +142,7 @@ export default function ProductCard({ product, onAddToCart }: ProductCardProps) 
                 <div className="flex items-center justify-between pt-3 border-t border-gray-100">
                     <div>
                         <p className="text-xs text-gray-500">Total</p>
-                        <p className="text-lg font-bold text-gray-900">₹{totalPrice.toFixed(2)}</p>
+                        <p className="text-lg font-bold text-gray-900">Rs.{totalPrice.toFixed(2)}</p>
                     </div>
                     <button
                         onClick={handleAddToCart}

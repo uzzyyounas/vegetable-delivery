@@ -186,7 +186,7 @@ export default function ShopClient({ products }: ShopClientProps) {
 
                                                 <p className="text-sm text-gray-600 mb-3">
                                                     {item.weight_grams >= 1000 ? `${item.weight_grams / 1000} kg` : `${item.weight_grams} g`}
-                                                    {' '} × ₹{item.price.toFixed(2)}
+                                                    {' '} × Rs.{item.price.toFixed(2)}
                                                 </p>
 
                                                 <div className="flex items-center justify-between">
@@ -207,7 +207,7 @@ export default function ShopClient({ products }: ShopClientProps) {
                                                     </div>
 
                                                     <span className="font-bold text-gray-900">
-                            ₹{(item.price * item.quantity).toFixed(2)}
+                            Rs.{(item.price * item.quantity).toFixed(2)}
                           </span>
                                                 </div>
                                             </div>
@@ -221,7 +221,7 @@ export default function ShopClient({ products }: ShopClientProps) {
                                     <div className="flex justify-between items-center mb-4">
                                         <span className="text-lg font-semibold text-gray-900">Total</span>
                                         <span className="text-2xl font-bold text-green-600">
-                      ₹{totalAmount.toFixed(2)}
+                      Rs.{totalAmount.toFixed(2)}
                     </span>
                                     </div>
 

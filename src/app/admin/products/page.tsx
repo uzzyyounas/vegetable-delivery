@@ -209,7 +209,7 @@ export default function AdminProductsPage() {
                                 {product.pricing_type === 'daily' && (
                                     <div className="bg-gray-50 rounded-lg p-4">
                                         <label className="block text-sm font-medium text-gray-700 mb-2">
-                                            Price per kg (₹)
+                                            Price per kg (Rs.)
                                         </label>
                                         {editingProduct === product.id ? (
                                             <input
@@ -225,7 +225,7 @@ export default function AdminProductsPage() {
                                             />
                                         ) : (
                                             <p className="text-2xl font-bold text-green-600">
-                                                ₹{product.daily_price?.price_per_kg?.toFixed(2) || 'Not set'}
+                                                Rs.{product.daily_price?.price_per_kg?.toFixed(2) || 'Not set'}
                                             </p>
                                         )}
                                     </div>
@@ -303,7 +303,7 @@ export default function AdminProductsPage() {
                                     : `${tier.weight_grams} g`}
                               </span>
                                                             <span className="font-semibold text-green-600">
-                                ₹{tier.price.toFixed(2)}
+                                Rs.{tier.price.toFixed(2)}
                               </span>
                                                         </div>
                                                     ))
