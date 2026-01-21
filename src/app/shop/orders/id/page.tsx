@@ -107,11 +107,11 @@ export default async function OrderDetailsPage({ params }: { params: { id: strin
                                                 {item.weight_grams >= 1000
                                                     ? `${item.weight_grams / 1000} kg`
                                                     : `${item.weight_grams} g`
-                                                } × {item.quantity} = ₹{item.unit_price.toFixed(2)} each
+                                                } × {item.quantity} = Rs.{item.unit_price.toFixed(2)} each
                                             </p>
                                         </div>
                                         <span className="font-semibold text-gray-900">
-                      ₹{item.subtotal.toFixed(2)}
+                      Rs.{item.subtotal.toFixed(2)}
                     </span>
                                     </div>
                                 ))}
@@ -121,7 +121,7 @@ export default async function OrderDetailsPage({ params }: { params: { id: strin
                                 <div className="flex justify-between items-center">
                                     <span className="font-semibold text-gray-900">Total Amount</span>
                                     <span className="text-2xl font-bold text-green-600">
-                    ₹{order.total_amount.toFixed(2)}
+                    Rs.{order.total_amount.toFixed(2)}
                   </span>
                                 </div>
                             </div>

@@ -5,6 +5,7 @@ import { useState, useEffect } from 'react'
 import { Clock, User, Mail, Phone, MapPin, FileText, Loader2, CheckCircle } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { DeliverySlot, CheckoutData } from '@/lib/types/database.types'
+import { useRouter } from 'next/navigation'
 
 interface CheckoutFormProps {
     totalAmount: number
@@ -72,9 +73,9 @@ export default function CheckoutForm({ totalAmount, onSubmit, userEmail, userPho
             newErrors.phone = 'Valid 10-digit phone number required'
         }
         if (!formData.delivery_address.trim()) newErrors.delivery_address = 'Address is required'
-        if (!formData.pin_code.trim() || formData.pin_code.length < 6) {
-            newErrors.pin_code = 'Valid pin code required'
-        }
+        // if (!formData.pin_code.trim() || formData.pin_code.length < 6) {
+        //     newErrors.pin_code = 'Valid pin code required'
+        // }
         if (!formData.delivery_slot_id) newErrors.delivery_slot_id = 'Please select delivery slot'
 
         setErrors(newErrors)
@@ -309,7 +310,7 @@ export default function CheckoutForm({ totalAmount, onSubmit, userEmail, userPho
                 <div className="pt-4 border-t border-gray-200">
                     <div className="flex items-center justify-between mb-4">
                         <span className="text-gray-700 font-medium">Total Amount</span>
-                        <span className="text-2xl font-bold text-green-600">₹{totalAmount.toFixed(2)}</span>
+                        <span className="text-2xl font-bold text-green-600">Rs.{totalAmount.toFixed(2)}</span>
                     </div>
 
                     <button

@@ -1,9 +1,9 @@
-// src/app/(shop)/checkout/page.tsx
+// src/app/checkout/page.tsx
 'use client'
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Leaf, ArrowLeft } from 'lucide-react'
+import { Leaf, ArrowLeft, Loader2 } from 'lucide-react'
 import CheckoutForm from '@/components/checkout/CheckoutForm'
 import { createClient } from '@/lib/supabase/client'
 import { CartItem, CheckoutData } from '@/lib/types/database.types'
@@ -18,9 +18,15 @@ export default function CheckoutPage() {
 
     useEffect(() => {
         // Load cart from localStorage
-        const savedCart = localStorage.getItem('cart')
+        const savedCart = localStorage.getItem('vegetable_cart')
         if (savedCart) {
-            setCart(JSON.parse(savedCart))
+            try {
+                const parsedCart = JSON.parse(savedCart)
+                setCart(parsedCart)
+            } catch (error) {
+                console.error('Error parsing cart:', error)
+                setCart([])
+            }
         }
 
         // Check if user is logged in
@@ -35,17 +41,17 @@ export default function CheckoutPage() {
     const handleCheckout = async (checkoutData: CheckoutData) => {
         try {
             // Validate service zone
-            const { data: zone } = await supabase
-                .from('service_zones')
-                .select('*')
-                .eq('pin_code', checkoutData.pin_code)
-                .eq('is_active', true)
-                .single()
-
-            if (!zone) {
-                alert('We do not deliver to this pin code yet')
-                return
-            }
+            // const { data: zone, error: zoneError } = await supabase
+            //     .from('service_zones')
+            //     .select('*')
+            //     .eq('pin_code', checkoutData.pin_code)
+            //     .eq('is_active', true)
+            //     .single()
+            //
+            // if (zoneError || !zone) {
+            //     alert('We do not deliver to this pin code yet. Please contact support.')
+            //     return
+            // }
 
             let guestCustomerId = null
 
@@ -61,7 +67,10 @@ export default function CheckoutPage() {
                     .select()
                     .single()
 
-                if (guestError) throw guestError
+                if (guestError) {
+                    console.error('Guest customer error:', guestError)
+                    throw new Error('Failed to create customer profile')
+                }
                 guestCustomerId = guestData.id
             }
 
@@ -77,14 +86,17 @@ export default function CheckoutPage() {
                     phone: checkoutData.phone,
                     email: checkoutData.email,
                     total_amount: totalAmount,
-                    notes: checkoutData.notes,
+                    notes: checkoutData.notes || null,
                     status: 'pending',
                     payment_status: 'pending'
                 })
                 .select()
                 .single()
 
-            if (orderError) throw orderError
+            if (orderError) {
+                console.error('Order creation error:', orderError)
+                throw new Error('Failed to create order')
+            }
 
             // Create order items
             const orderItems = cart.map(item => ({
@@ -101,7 +113,10 @@ export default function CheckoutPage() {
                 .from('order_items')
                 .insert(orderItems)
 
-            if (itemsError) throw itemsError
+            if (itemsError) {
+                console.error('Order items error:', itemsError)
+                throw new Error('Failed to add order items')
+            }
 
             // Create initial status history
             await supabase
@@ -118,22 +133,22 @@ export default function CheckoutPage() {
             })
 
             // Clear cart
-            localStorage.removeItem('cart')
+            localStorage.removeItem('vegetable_cart')
 
-            // Redirect to order confirmation
-            router.push(`/orders/${order.id}`)
-        } catch (error) {
+            // Redirect to success page
+            router.push(`/order-success?order=${order.order_number}&id=${order.id}`)
+        } catch (error: any) {
             console.error('Checkout error:', error)
-            alert('Failed to place order. Please try again.')
+            alert('Failed to place order: ' + (error.message || 'Please try again'))
         }
     }
 
     if (isLoading) {
         return (
-            <div className="min-h-screen flex items-center justify-center">
+            <div className="min-h-screen flex items-center justify-center bg-gray-50">
                 <div className="text-center">
-                    <Leaf className="w-12 h-12 text-green-600 animate-pulse mx-auto mb-4" />
-                    <p className="text-gray-600">Loading...</p>
+                    <Loader2 className="w-12 h-12 text-green-600 animate-spin mx-auto mb-4" />
+                    <p className="text-gray-600">Loading checkout...</p>
                 </div>
             </div>
         )
@@ -142,7 +157,8 @@ export default function CheckoutPage() {
     if (cart.length === 0) {
         return (
             <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
-                <div className="text-center">
+                <div className="text-center max-w-md">
+                    <Leaf className="w-16 h-16 text-green-600 mx-auto mb-4 opacity-50" />
                     <h2 className="text-2xl font-bold text-gray-900 mb-2">Your cart is empty</h2>
                     <p className="text-gray-600 mb-6">Add some fresh vegetables to get started</p>
                     <Link
@@ -160,7 +176,7 @@ export default function CheckoutPage() {
     return (
         <div className="min-h-screen bg-gray-50">
             {/* Header */}
-            <header className="bg-white shadow-sm">
+            <header className="bg-white shadow-sm sticky top-0 z-10">
                 <div className="max-w-7xl mx-auto px-4 py-4">
                     <div className="flex items-center gap-4">
                         <Link href="/" className="text-gray-600 hover:text-gray-900">
@@ -178,43 +194,49 @@ export default function CheckoutPage() {
                 <div className="grid md:grid-cols-3 gap-6">
                     {/* Order Summary */}
                     <div className="md:col-span-1">
-                        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 sticky top-4">
+                        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 sticky top-24">
                             <h3 className="font-semibold text-gray-900 mb-4">Order Summary</h3>
 
-                            <div className="space-y-3 mb-4">
+                            <div className="space-y-3 mb-4 max-h-96 overflow-y-auto">
                                 {cart.map((item, index) => (
-                                    <div key={index} className="flex justify-between text-sm">
-                                        <div>
+                                    <div key={index} className="flex justify-between text-sm pb-3 border-b last:border-0">
+                                        <div className="flex-1 pr-4">
                                             <p className="font-medium text-gray-900">{item.product.name}</p>
                                             <p className="text-gray-500">
                                                 {item.weight_grams >= 1000 ? `${item.weight_grams / 1000} kg` : `${item.weight_grams} g`}
                                                 {' '} × {item.quantity}
                                             </p>
                                         </div>
-                                        <span className="font-medium text-gray-900">
+                                        <span className="font-medium text-gray-900 whitespace-nowrap">
                       Rs.{(item.price * item.quantity).toFixed(2)}
                     </span>
                                     </div>
                                 ))}
                             </div>
 
-                            <div className="border-t border-gray-200 pt-4">
-                                <div className="flex justify-between items-center mb-2">
+                            <div className="border-t border-gray-200 pt-4 space-y-2">
+                                <div className="flex justify-between items-center text-sm">
                                     <span className="text-gray-600">Subtotal</span>
                                     <span className="font-medium">Rs.{totalAmount.toFixed(2)}</span>
                                 </div>
-                                <div className="flex justify-between items-center mb-2">
-                                    <span className="text-gray-600">Delivery</span>
+                                <div className="flex justify-between items-center text-sm">
+                                    <span className="text-gray-600">Delivery Fee</span>
                                     <span className="font-medium text-green-600">FREE</span>
                                 </div>
-                                <div className="border-t border-gray-200 pt-2 mt-2">
+                                <div className="border-t border-gray-200 pt-3 mt-3">
                                     <div className="flex justify-between items-center">
                                         <span className="font-semibold text-gray-900">Total</span>
-                                        <span className="text-xl font-bold text-green-600">
+                                        <span className="text-2xl font-bold text-green-600">
                       Rs.{totalAmount.toFixed(2)}
                     </span>
                                     </div>
                                 </div>
+                            </div>
+
+                            <div className="mt-4 p-3 bg-blue-50 rounded-lg">
+                                <p className="text-xs text-blue-800">
+                                    💡 <strong>Tip:</strong> Save your details by creating an account for faster checkout next time!
+                                </p>
                             </div>
                         </div>
                     </div>
@@ -234,7 +256,7 @@ export default function CheckoutPage() {
     )
 }
 
-// SQL Function for incrementing slot orders (Add to migration)
+// SQL Function to add (if not exists)
 /*
 CREATE OR REPLACE FUNCTION increment_slot_orders(slot_id UUID)
 RETURNS void AS $$

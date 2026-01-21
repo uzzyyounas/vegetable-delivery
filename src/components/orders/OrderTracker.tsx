@@ -1,3 +1,4 @@
+// src/components/orders/OrderTracker.tsx
 'use client'
 
 import { Package, Truck, CheckCircle, Clock, XCircle } from 'lucide-react'
@@ -180,5 +181,17 @@ export default function OrderTracker({ currentStatus, statusHistory }: OrderTrac
                 </div>
             </div>
         </div>
+    )
+}
+
+// EXPORT this function so it can be used in admin panel
+export function OrderStatusBadge({ status }: { status: OrderStatus }) {
+    const config = statusConfig[status]
+
+    return (
+        <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium ${config.bgColor} ${config.color}`}>
+      <span className="w-1.5 h-1.5 rounded-full bg-current" />
+            {config.label}
+    </span>
     )
 }
