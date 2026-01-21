@@ -2,10 +2,12 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { ShoppingCart, Leaf, X, Search } from 'lucide-react'
+import { ShoppingCart, Leaf, X, Search, User } from 'lucide-react'
 import ProductCard from '@/components/products/ProductCard'
 import AutoLocationChecker from '@/components/geofence/AutoLocationChecker'
+import TopBar from '@/components/layout/TopBar'
 import { ProductWithPricing, CartItem } from '@/lib/types/database.types'
+import { createClient } from '@/lib/supabase/client'
 import Link from 'next/link'
 
 interface ShopClientProps {
@@ -18,6 +20,9 @@ export default function ShopClient({ products }: ShopClientProps) {
     const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null)
     const [showCart, setShowCart] = useState(false)
     const [searchQuery, setSearchQuery] = useState('')
+    const [user, setUser] = useState<any>(null)
+
+    const supabase = createClient()
 
     // Load cart from localStorage on mount
     useEffect(() => {
@@ -29,6 +34,11 @@ export default function ShopClient({ products }: ShopClientProps) {
                 console.error('Error loading cart:', error)
             }
         }
+
+        // Check if user is logged in
+        supabase.auth.getUser().then(({ data }) => {
+            setUser(data.user)
+        })
     }, [])
 
     // Save cart to localStorage whenever it changes
@@ -119,6 +129,9 @@ export default function ShopClient({ products }: ShopClientProps) {
 
     return (
         <div className="min-h-screen bg-gradient-to-b from-green-50 to-white">
+            {/* Top Bar */}
+            <TopBar />
+
             {/* Header */}
             <header className="bg-white shadow-sm sticky top-0 z-40">
                 <div className="max-w-7xl mx-auto px-4 py-4">
@@ -131,18 +144,39 @@ export default function ShopClient({ products }: ShopClientProps) {
                             </div>
                         </div>
 
-                        <button
-                            onClick={() => setShowCart(!showCart)}
-                            className="relative bg-green-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-green-700"
-                        >
-                            <ShoppingCart className="w-5 h-5" />
-                            <span className="font-medium">Cart</span>
-                            {totalItems > 0 && (
-                                <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs w-6 h-6 rounded-full flex items-center justify-center font-bold">
-                  {totalItems}
-                </span>
+                        <div className="flex items-center gap-3">
+                            {/* User Profile Link */}
+                            {user ? (
+                                <Link
+                                    href="/profile"
+                                    className="flex items-center gap-2 text-gray-700 hover:text-gray-900 px-3 py-2 rounded-lg hover:bg-gray-100"
+                                >
+                                    <User className="w-5 h-5" />
+                                    <span className="hidden sm:inline font-medium">Profile</span>
+                                </Link>
+                            ) : (
+                                <Link
+                                    href="/login"
+                                    className="text-gray-700 hover:text-gray-900 px-3 py-2 rounded-lg hover:bg-gray-100 font-medium"
+                                >
+                                    Login
+                                </Link>
                             )}
-                        </button>
+
+                            {/* Cart Button */}
+                            <button
+                                onClick={() => setShowCart(!showCart)}
+                                className="relative bg-green-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-green-700"
+                            >
+                                <ShoppingCart className="w-5 h-5" />
+                                <span className="font-medium">Cart</span>
+                                {totalItems > 0 && (
+                                    <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs w-6 h-6 rounded-full flex items-center justify-center font-bold">
+                    {totalItems}
+                  </span>
+                                )}
+                            </button>
+                        </div>
                     </div>
                 </div>
             </header>

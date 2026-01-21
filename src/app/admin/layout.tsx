@@ -4,7 +4,7 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Leaf, Package, Calendar, MapPin, ShoppingBag, Menu, X, Globe } from 'lucide-react'
+import { Leaf, Package, Calendar, MapPin, ShoppingBag, Menu, X, Globe, Settings } from 'lucide-react'
 
 export default function AdminLayout({
                                         children,
@@ -18,8 +18,9 @@ export default function AdminLayout({
         { name: 'Products', href: '/admin/products', icon: Package },
         { name: 'Delivery Slots', href: '/admin/delivery-slots', icon: Calendar },
         { name: 'Service Area', href: '/admin/service-area', icon: Globe },
-        // { name: 'Service Zones', href: '/admin/service-zones', icon: MapPin },
+        { name: 'Service Zones', href: '/admin/service-zones', icon: MapPin },
         { name: 'Orders', href: '/admin/orders', icon: ShoppingBag },
+        { name: 'Business Settings', href: '/admin/business-info', icon: Settings },
     ]
 
     return (

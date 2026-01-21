@@ -174,7 +174,7 @@ export default function CheckoutForm({ totalAmount, onSubmit, userEmail, userPho
                         value={formData.email}
                         onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                         className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                        placeholder="your@email.com"
+                        placeholder="usman@email.com"
                     />
                     {errors.email && <p className="mt-1 text-sm text-red-600">{errors.email}</p>}
                 </div>
