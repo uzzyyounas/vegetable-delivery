@@ -140,10 +140,10 @@ export default function AdminServiceZonesPage() {
                 alert(`Added ${codes.length} service zones!`)
                 fetchZones()
             })
-            .catch((error: any) => {
-                console.error('Error bulk adding zones:', error)
-                alert('Failed to add zones: ' + error.message)
-            })
+            // .catch((error: any) => {
+            //     console.error('Error bulk adding zones:', error)
+            //     alert('Failed to add zones: ' + error.message)
+            // })
     }
 
     if (isLoading) {
