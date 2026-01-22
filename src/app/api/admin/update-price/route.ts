@@ -5,7 +5,7 @@ export async function POST(req: Request) {
     const { productId, pricingType, newPrice, tiers } = await req.json()
     const today = new Date().toISOString().split('T')[0]
 
-    const supabase = createServerSupabaseClient()
+    const supabase = await createServerSupabaseClient()
 
     try {
         if (pricingType === 'daily') {
