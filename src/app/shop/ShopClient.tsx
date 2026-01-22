@@ -2,7 +2,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { ShoppingCart, Leaf, X, Search, User, Award, Phone, Menu as MenuIcon } from 'lucide-react'
+import { ShoppingCart, Leaf, X, Search, User, Award, Phone, Menu as MenuIcon, Package } from 'lucide-react'
 import ProductCard from '@/components/products/ProductCard'
 import AutoLocationChecker from '@/components/geofence/AutoLocationChecker'
 import { ProductWithPricing, CartItem } from '@/lib/types/database.types'
@@ -35,32 +35,118 @@ export default function ShopClient({ products }: ShopClientProps) {
 
     // Load cart and fetch data on mount
     useEffect(() => {
-        const savedCart = localStorage.getItem('vegetable_cart')
-        if (savedCart) {
-            try {
-                setCart(JSON.parse(savedCart))
-            } catch (error) {
-                console.error('Error loading cart:', error)
-            }
-        }
-
-        // Check if user is logged in
-        supabase.auth.getUser().then(({ data }) => {
-            setUser(data.user)
-        })
-
-        // Fetch categories
+        initializeUser()
         fetchCategories()
     }, [])
 
-    // Save cart to localStorage whenever it changes
-    useEffect(() => {
-        if (cart.length > 0) {
-            localStorage.setItem('vegetable_cart', JSON.stringify(cart))
+    const initializeUser = async () => {
+        const { data: { user: currentUser } } = await supabase.auth.getUser()
+
+        if (currentUser) {
+            setUser(currentUser)
+            // Load user-specific cart from database
+            await loadUserCart(currentUser.id)
         } else {
+            setUser(null)
+            // Clear cart for guests on refresh (security measure)
+            setCart([])
             localStorage.removeItem('vegetable_cart')
         }
-    }, [cart])
+    }
+
+    const loadUserCart = async (userId: string) => {
+        try {
+            const { data, error } = await supabase
+                .from('user_carts')
+                .select(`
+                    *,
+                    cart_items(
+                        id,
+                        product_id,
+                        weight_grams,
+                        quantity,
+                        price,
+                        products(*)
+                    )
+                `)
+                .eq('user_id', userId)
+                .eq('status', 'active')
+                .single()
+
+            if (data && data.cart_items) {
+                const cartItems: CartItem[] = data.cart_items.map((item: any) => ({
+                    product: item.products,
+                    weight_grams: item.weight_grams,
+                    quantity: item.quantity,
+                    price: item.price
+                }))
+                setCart(cartItems)
+            }
+        } catch (error) {
+            console.error('Error loading user cart:', error)
+        }
+    }
+
+    const saveCartToDatabase = async (updatedCart: CartItem[]) => {
+        if (!user) return
+
+        try {
+            // Get or create user cart
+            let { data: userCart } = await supabase
+                .from('user_carts')
+                .select('id')
+                .eq('user_id', user.id)
+                .eq('status', 'active')
+                .single()
+
+            let cartId: string
+
+            if (!userCart) {
+                const { data: newCart } = await supabase
+                    .from('user_carts')
+                    .insert({
+                        user_id: user.id,
+                        status: 'active'
+                    })
+                    .select('id')
+                    .single()
+
+                cartId = newCart!.id
+            } else {
+                cartId = userCart.id
+            }
+
+            // Delete existing cart items
+            await supabase
+                .from('cart_items')
+                .delete()
+                .eq('cart_id', cartId)
+
+            // Insert new cart items
+            if (updatedCart.length > 0) {
+                const cartItemsData = updatedCart.map(item => ({
+                    cart_id: cartId,
+                    product_id: item.product.id,
+                    weight_grams: item.weight_grams,
+                    quantity: item.quantity,
+                    price: item.price
+                }))
+
+                await supabase
+                    .from('cart_items')
+                    .insert(cartItemsData)
+            }
+        } catch (error) {
+            console.error('Error saving cart to database:', error)
+        }
+    }
+
+    // Save cart whenever it changes
+    useEffect(() => {
+        if (user) {
+            saveCartToDatabase(cart)
+        }
+    }, [cart, user])
 
     const fetchCategories = async () => {
         const { data } = await supabase
@@ -80,6 +166,12 @@ export default function ShopClient({ products }: ShopClientProps) {
     }
 
     const handleAddToCart = (productId: string, weightGrams: number, quantity: number, price: number) => {
+        if (!user) {
+            alert('Please login to add items to cart')
+            window.location.href = '/login'
+            return
+        }
+
         if (!isInServiceArea) {
             alert('Sorry, we do not deliver to your area yet. You can only browse products.')
             return
@@ -137,7 +229,6 @@ export default function ShopClient({ products }: ShopClientProps) {
 
     // Filter products by category and search
     const filteredProducts = products.filter(product => {
-        // Category filter
         if (selectedCategory !== 'all') {
             const category = categories.find(c => c.slug === selectedCategory)
             if (category && product.category_id !== category.id) {
@@ -145,7 +236,6 @@ export default function ShopClient({ products }: ShopClientProps) {
             }
         }
 
-        // Search filter
         if (searchQuery.trim()) {
             const query = searchQuery.toLowerCase()
             return (
@@ -167,7 +257,6 @@ export default function ShopClient({ products }: ShopClientProps) {
             <header className="bg-white shadow-sm sticky top-0 z-50">
                 <div className="max-w-7xl mx-auto px-4 py-4">
                     <div className="flex items-center justify-between">
-                        {/* Logo */}
                         <Link href="/" className="flex items-center gap-2">
                             <Leaf className="w-8 h-8 text-green-600" />
                             <div>
@@ -176,11 +265,16 @@ export default function ShopClient({ products }: ShopClientProps) {
                             </div>
                         </Link>
 
-                        {/* Desktop Navigation */}
                         <nav className="hidden md:flex items-center gap-6">
                             <Link href="/" className="text-gray-700 hover:text-green-600 font-medium">
                                 Home
                             </Link>
+                            {user && (
+                                <Link href="/orders" className="text-gray-700 hover:text-green-600 font-medium flex items-center gap-1">
+                                    <Package className="w-4 h-4" />
+                                    Track Orders
+                                </Link>
+                            )}
                             <Link href="/certifications" className="text-gray-700 hover:text-green-600 font-medium flex items-center gap-1">
                                 <Award className="w-4 h-4" />
                                 Certifications
@@ -191,9 +285,7 @@ export default function ShopClient({ products }: ShopClientProps) {
                             </Link>
                         </nav>
 
-                        {/* Right Side Actions */}
                         <div className="flex items-center gap-3">
-                            {/* Mobile Menu Button */}
                             <button
                                 onClick={() => setShowMobileMenu(!showMobileMenu)}
                                 className="md:hidden p-2 text-gray-700 hover:bg-gray-100 rounded-lg"
@@ -201,7 +293,6 @@ export default function ShopClient({ products }: ShopClientProps) {
                                 <MenuIcon className="w-6 h-6" />
                             </button>
 
-                            {/* User Profile/Login */}
                             {user ? (
                                 <Link
                                     href="/profile"
@@ -219,28 +310,39 @@ export default function ShopClient({ products }: ShopClientProps) {
                                 </Link>
                             )}
 
-                            {/* Cart Button */}
                             <button
-                                onClick={() => setShowCart(!showCart)}
+                                onClick={() => {
+                                    if (!user) {
+                                        alert('Please login to view cart')
+                                        window.location.href = '/login'
+                                        return
+                                    }
+                                    setShowCart(!showCart)
+                                }}
                                 className="relative bg-green-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-green-700"
                             >
                                 <ShoppingCart className="w-5 h-5" />
                                 <span className="hidden sm:inline font-medium">Cart</span>
                                 {totalItems > 0 && (
                                     <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs w-6 h-6 rounded-full flex items-center justify-center font-bold">
-                    {totalItems}
-                  </span>
+                                        {totalItems}
+                                    </span>
                                 )}
                             </button>
                         </div>
                     </div>
 
-                    {/* Mobile Menu */}
                     {showMobileMenu && (
                         <div className="md:hidden mt-4 py-4 border-t space-y-2">
                             <Link href="/" className="block py-2 text-gray-700 hover:text-green-600 font-medium">
                                 Home
                             </Link>
+                            {user && (
+                                <Link href="/orders" className="block py-2 text-gray-700 hover:text-green-600 font-medium">
+                                    <Package className="w-4 h-4 inline mr-2" />
+                                    Track Orders
+                                </Link>
+                            )}
                             <Link href="/certifications" className="block py-2 text-gray-700 hover:text-green-600 font-medium">
                                 <Award className="w-4 h-4 inline mr-2" />
                                 Certifications
@@ -265,13 +367,10 @@ export default function ShopClient({ products }: ShopClientProps) {
             </header>
 
             <div className="max-w-7xl mx-auto px-4 py-8">
-                {/* Auto Location Checker */}
                 <AutoLocationChecker onLocationVerified={handleLocationVerified} />
 
-                {/* Show products only after location is detected */}
                 {userLocation && (
                     <>
-                        {/* Category Tabs */}
                         <div className="mb-6 bg-white rounded-xl shadow-sm border border-gray-200 p-4">
                             <h3 className="font-semibold text-gray-900 mb-3">Shop by Category</h3>
                             <div className="flex flex-wrap gap-2">
@@ -301,7 +400,6 @@ export default function ShopClient({ products }: ShopClientProps) {
                             </div>
                         </div>
 
-                        {/* Search Bar */}
                         <div className="mb-6">
                             <div className="relative">
                                 <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
@@ -321,26 +419,14 @@ export default function ShopClient({ products }: ShopClientProps) {
                                     </button>
                                 )}
                             </div>
-
-                            {searchQuery && (
-                                <p className="mt-2 text-sm text-gray-600">
-                                    Found {filteredProducts.length} product{filteredProducts.length !== 1 ? 's' : ''}
-                                </p>
-                            )}
                         </div>
 
-                        {/* Products Header */}
                         <div className="mb-6">
                             <h2 className="text-2xl font-bold text-gray-900 mb-2">
                                 {selectedCategory === 'all'
                                     ? 'All Products'
                                     : categories.find(c => c.slug === selectedCategory)?.name}
                             </h2>
-                            <p className="text-gray-600">
-                                {selectedCategory === 'all'
-                                    ? 'Browse our complete collection of fresh produce'
-                                    : categories.find(c => c.slug === selectedCategory)?.description || 'Farm-fresh produce'}
-                            </p>
                             {!isInServiceArea && (
                                 <div className="mt-3 bg-orange-100 text-orange-800 px-4 py-2 rounded-lg text-sm">
                                     ⚠️ Browsing only - You cannot place orders outside our service area
@@ -348,7 +434,6 @@ export default function ShopClient({ products }: ShopClientProps) {
                             )}
                         </div>
 
-                        {/* Products Grid */}
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                             {filteredProducts.map(product => (
                                 <ProductCard
@@ -358,32 +443,11 @@ export default function ShopClient({ products }: ShopClientProps) {
                                 />
                             ))}
                         </div>
-
-                        {filteredProducts.length === 0 && (
-                            <div className="text-center py-12">
-                                <Search className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-                                <p className="text-gray-500">
-                                    {searchQuery
-                                        ? `No products found for "${searchQuery}"`
-                                        : 'No products in this category'}
-                                </p>
-                                <button
-                                    onClick={() => {
-                                        setSearchQuery('')
-                                        setSelectedCategory('all')
-                                    }}
-                                    className="mt-4 text-green-600 hover:text-green-700 font-medium"
-                                >
-                                    View All Products
-                                </button>
-                            </div>
-                        )}
                     </>
                 )}
             </div>
 
-            {/* Cart Sidebar - Same as before */}
-            {showCart && (
+            {showCart && user && (
                 <div className="fixed inset-0 bg-black bg-opacity-50 z-50" onClick={() => setShowCart(false)}>
                     <div
                         className="absolute right-0 top-0 h-full w-full max-w-md bg-white shadow-xl"
@@ -443,8 +507,8 @@ export default function ShopClient({ products }: ShopClientProps) {
                                                     </div>
 
                                                     <span className="font-bold text-gray-900">
-                            Rs.{(item.price * item.quantity).toFixed(2)}
-                          </span>
+                                                        Rs.{(item.price * item.quantity).toFixed(2)}
+                                                    </span>
                                                 </div>
                                             </div>
                                         ))}
@@ -457,8 +521,8 @@ export default function ShopClient({ products }: ShopClientProps) {
                                     <div className="flex justify-between items-center mb-4">
                                         <span className="text-lg font-semibold text-gray-900">Total</span>
                                         <span className="text-2xl font-bold text-green-600">
-                      Rs.{totalAmount.toFixed(2)}
-                    </span>
+                                            Rs.{totalAmount.toFixed(2)}
+                                        </span>
                                     </div>
 
                                     {isInServiceArea ? (

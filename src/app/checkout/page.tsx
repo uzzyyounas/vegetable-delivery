@@ -17,18 +17,75 @@ export default function CheckoutPage() {
     const supabase = createClient()
 
     useEffect(() => {
-        // Load cart from localStorage
-        const savedCart = localStorage.getItem('vegetable_cart')
-        if (savedCart) {
+        // Load cart from localStorag
+        // const savedCart = localStorage.getItem('vegetable_cart')
+        // if (savedCart) {
+        //     try {
+        //         const parsedCart = JSON.parse(savedCart)
+        //         setCart(parsedCart)
+        //     } catch (error) {
+        //         console.error('Error parsing cart:', error)
+        //         setCart([])
+        //     }
+        // }
+
+        const fetchCartFromSupabase = async () => {
             try {
-                const parsedCart = JSON.parse(savedCart)
-                setCart(parsedCart)
+                // 1. Get logged-in user
+                const { data } = await supabase.auth.getUser();
+                const user = data.user;
+
+                setUser(user);
+                setIsLoading(false);
+
+                // If no user, empty cart
+                if (!user) {
+                    setCart([]);
+                    return;
+                }
+
+                // 2. Get user cart
+                const { data: cartData, error: cartError } = await supabase
+                    .from('user_carts')
+                    .select('*')
+                    .eq('user_id', user.id)
+                    .single();
+
+                if (cartError) {
+                    console.error("Error fetching cart:", cartError);
+                    setCart([]);
+                    return;
+                }
+
+                // 3. Get cart items
+                const { data: itemsData, error: itemsError } = await supabase
+                    .from('cart_items')
+                    .select(`id, quantity,weight_grams,price, product_id, products (id,  name )`)
+                    .eq('cart_id', cartData.id);
+                console.log("cart item data: ", itemsData);
+
+                if (itemsError) {
+                    console.error("Error fetching cart items:", itemsError);
+                    setCart([]);
+                    return;
+                }
+
+                // 4. Combine and set cart
+                const finalCart = {
+                    ...cartData,
+                    items: itemsData || [],
+                };
+
+                setCart(finalCart);
+
             } catch (error) {
-                console.error('Error parsing cart:', error)
-                setCart([])
+                console.error("Error fetching cart from supabase:", error);
+                setCart([]);
+                setIsLoading(false);
             }
         }
 
+        fetchCartFromSupabase();
         // Check if user is logged in
         supabase.auth.getUser().then(({ data }) => {
             setUser(data.user)
@@ -36,9 +93,10 @@ export default function CheckoutPage() {
         })
     }, [])
 
-    const totalAmount = cart.reduce((sum, item) => sum + item.price * item.quantity, 0)
+    const totalAmount = cart?.items?.reduce((sum, item) => sum + item.price * item.quantity, 0)
 
     const handleCheckout = async (checkoutData: CheckoutData) => {
+
         try {
             // Validate service zone
             // const { data: zone, error: zoneError } = await supabase
@@ -105,10 +163,10 @@ export default function CheckoutPage() {
             }
 
             // Create order items
-            const orderItems = cart.map(item => ({
+            const orderItems = cart?.items?.map(item => ({
                 order_id: order.id,
-                product_id: item.product.id,
-                product_name: item.product.name,
+                product_id: item.products.id,
+                product_name: item.products.name,
                 weight_grams: item.weight_grams,
                 unit_price: item.price,
                 quantity: item.quantity,
@@ -204,10 +262,10 @@ export default function CheckoutPage() {
                             <h3 className="font-semibold text-gray-900 mb-4">Order Summary</h3>
 
                             <div className="space-y-3 mb-4 max-h-96 overflow-y-auto">
-                                {cart.map((item, index) => (
+                                {cart?.items?.map((item, index) => (
                                     <div key={index} className="flex justify-between text-sm pb-3 border-b last:border-0">
                                         <div className="flex-1 pr-4">
-                                            <p className="font-medium text-gray-900">{item.product.name}</p>
+                                            <p className="font-medium text-gray-900">{item.products.name}</p>
                                             <p className="text-gray-500">
                                                 {item.weight_grams >= 1000 ? `${item.weight_grams / 1000} kg` : `${item.weight_grams} g`}
                                                 {' '} × {item.quantity}

@@ -8,18 +8,6 @@ import { User, Package, LogOut, Loader2, Mail, Phone, MapPin, Calendar } from 'l
 import { OrderStatusBadge } from '@/components/orders/OrderTracker'
 import Link from 'next/link'
 
-// interface Order {
-//     id: string
-//     order_number: string
-//     total_amount: number
-//     status: 'pending' | 'confirmed' | 'packed' | 'out_for_delivery' | 'delivered' | 'cancelled'
-//     created_at: string
-//     delivery_slot: {
-//         slot_date: string
-//         start_time: string
-//     } | null
-// }
-
 interface Order {
     id: string
     order_number: string
@@ -29,7 +17,7 @@ interface Order {
     delivery_slot: {
         slot_date: string
         start_time: string
-    }[]  // <-- array
+    } | null
 }
 
 export default function ProfilePage() {
