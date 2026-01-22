@@ -69,13 +69,28 @@ export default function LoginPage() {
             if (error) throw error
 
             // Create profile
+
             if (data.user) {
-                await supabase.from('profiles').insert({
-                    id: data.user.id,
-                    full_name: formData.fullName,
-                    phone: formData.phone
-                })
+                const { error: profileError } = await supabase
+                    .from('profiles')
+                    .insert({
+                        id: data.user.id,
+                        full_name: formData.fullName,
+                        phone: formData.phone
+                    });
+
+                if (profileError) throw profileError;
+            } else {
+                throw new Error('User not created. Please verify your email first.');
             }
+
+            // if (data.user) {
+            //     await supabase.from('profiles').insert({
+            //         id: data.user.id,
+            //         full_name: formData.fullName,
+            //         phone: formData.phone
+            //     })
+            // }
 
             alert('Registration successful! Please check your email to verify your account.')
             setIsLogin(true)

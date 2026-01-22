@@ -2,16 +2,22 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { ShoppingCart, Leaf, X, Search, User } from 'lucide-react'
+import { ShoppingCart, Leaf, X, Search, User, Award, Phone, Menu as MenuIcon } from 'lucide-react'
 import ProductCard from '@/components/products/ProductCard'
 import AutoLocationChecker from '@/components/geofence/AutoLocationChecker'
-import TopBar from '@/components/layout/TopBar'
 import { ProductWithPricing, CartItem } from '@/lib/types/database.types'
 import { createClient } from '@/lib/supabase/client'
 import Link from 'next/link'
 
 interface ShopClientProps {
     products: ProductWithPricing[]
+}
+
+interface Category {
+    id: string
+    name: string
+    slug: string
+    description: string | null
 }
 
 export default function ShopClient({ products }: ShopClientProps) {
@@ -21,10 +27,13 @@ export default function ShopClient({ products }: ShopClientProps) {
     const [showCart, setShowCart] = useState(false)
     const [searchQuery, setSearchQuery] = useState('')
     const [user, setUser] = useState<any>(null)
+    const [categories, setCategories] = useState<Category[]>([])
+    const [selectedCategory, setSelectedCategory] = useState<string>('all')
+    const [showMobileMenu, setShowMobileMenu] = useState(false)
 
     const supabase = createClient()
 
-    // Load cart from localStorage on mount
+    // Load cart and fetch data on mount
     useEffect(() => {
         const savedCart = localStorage.getItem('vegetable_cart')
         if (savedCart) {
@@ -39,6 +48,9 @@ export default function ShopClient({ products }: ShopClientProps) {
         supabase.auth.getUser().then(({ data }) => {
             setUser(data.user)
         })
+
+        // Fetch categories
+        fetchCategories()
     }, [])
 
     // Save cart to localStorage whenever it changes
@@ -50,13 +62,24 @@ export default function ShopClient({ products }: ShopClientProps) {
         }
     }, [cart])
 
+    const fetchCategories = async () => {
+        const { data } = await supabase
+            .from('product_categories')
+            .select('id, name, slug, description')
+            .eq('is_active', true)
+            .order('display_order')
+
+        if (data) {
+            setCategories(data)
+        }
+    }
+
     const handleLocationVerified = (inArea: boolean, location: { lat: number; lng: number }) => {
         setIsInServiceArea(inArea)
         setUserLocation(location)
     }
 
     const handleAddToCart = (productId: string, weightGrams: number, quantity: number, price: number) => {
-        // Prevent adding to cart if outside service area
         if (!isInServiceArea) {
             alert('Sorry, we do not deliver to your area yet. You can only browse products.')
             return
@@ -112,16 +135,27 @@ export default function ShopClient({ products }: ShopClientProps) {
         )
     }
 
-    // Filter products based on search query
+    // Filter products by category and search
     const filteredProducts = products.filter(product => {
-        if (!searchQuery.trim()) return true
+        // Category filter
+        if (selectedCategory !== 'all') {
+            const category = categories.find(c => c.slug === selectedCategory)
+            if (category && product.category_id !== category.id) {
+                return false
+            }
+        }
 
-        const query = searchQuery.toLowerCase()
-        return (
-            product.name.toLowerCase().includes(query) ||
-            product.description?.toLowerCase().includes(query) ||
-            product.category?.toLowerCase().includes(query)
-        )
+        // Search filter
+        if (searchQuery.trim()) {
+            const query = searchQuery.toLowerCase()
+            return (
+                product.name.toLowerCase().includes(query) ||
+                product.description?.toLowerCase().includes(query) ||
+                product.category?.toLowerCase().includes(query)
+            )
+        }
+
+        return true
     })
 
     const totalItems = cart.reduce((sum, item) => sum + item.quantity, 0)
@@ -129,35 +163,57 @@ export default function ShopClient({ products }: ShopClientProps) {
 
     return (
         <div className="min-h-screen bg-gradient-to-b from-green-50 to-white">
-            {/* Top Bar */}
-            <TopBar />
-
             {/* Header */}
-            <header className="bg-white shadow-sm sticky top-0 z-40">
+            <header className="bg-white shadow-sm sticky top-0 z-50">
                 <div className="max-w-7xl mx-auto px-4 py-4">
                     <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
+                        {/* Logo */}
+                        <Link href="/" className="flex items-center gap-2">
                             <Leaf className="w-8 h-8 text-green-600" />
                             <div>
                                 <h1 className="text-2xl font-bold text-gray-900">Fresh Veggies</h1>
-                                <p className="text-xs text-gray-600">Faisalabad, Pakistan</p>
+                                <p className="text-xs text-gray-600">Farm Fresh Delivered</p>
                             </div>
-                        </div>
+                        </Link>
 
+                        {/* Desktop Navigation */}
+                        <nav className="hidden md:flex items-center gap-6">
+                            <Link href="/" className="text-gray-700 hover:text-green-600 font-medium">
+                                Home
+                            </Link>
+                            <Link href="/certifications" className="text-gray-700 hover:text-green-600 font-medium flex items-center gap-1">
+                                <Award className="w-4 h-4" />
+                                Certifications
+                            </Link>
+                            <Link href="/contact" className="text-gray-700 hover:text-green-600 font-medium flex items-center gap-1">
+                                <Phone className="w-4 h-4" />
+                                Contact
+                            </Link>
+                        </nav>
+
+                        {/* Right Side Actions */}
                         <div className="flex items-center gap-3">
-                            {/* User Profile Link */}
+                            {/* Mobile Menu Button */}
+                            <button
+                                onClick={() => setShowMobileMenu(!showMobileMenu)}
+                                className="md:hidden p-2 text-gray-700 hover:bg-gray-100 rounded-lg"
+                            >
+                                <MenuIcon className="w-6 h-6" />
+                            </button>
+
+                            {/* User Profile/Login */}
                             {user ? (
                                 <Link
                                     href="/profile"
-                                    className="flex items-center gap-2 text-gray-700 hover:text-gray-900 px-3 py-2 rounded-lg hover:bg-gray-100"
+                                    className="hidden sm:flex items-center gap-2 text-gray-700 hover:text-gray-900 px-3 py-2 rounded-lg hover:bg-gray-100"
                                 >
                                     <User className="w-5 h-5" />
-                                    <span className="hidden sm:inline font-medium">Profile</span>
+                                    <span className="font-medium">Profile</span>
                                 </Link>
                             ) : (
                                 <Link
                                     href="/login"
-                                    className="text-gray-700 hover:text-gray-900 px-3 py-2 rounded-lg hover:bg-gray-100 font-medium"
+                                    className="hidden sm:block text-gray-700 hover:text-gray-900 px-3 py-2 rounded-lg hover:bg-gray-100 font-medium"
                                 >
                                     Login
                                 </Link>
@@ -169,7 +225,7 @@ export default function ShopClient({ products }: ShopClientProps) {
                                 className="relative bg-green-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-green-700"
                             >
                                 <ShoppingCart className="w-5 h-5" />
-                                <span className="font-medium">Cart</span>
+                                <span className="hidden sm:inline font-medium">Cart</span>
                                 {totalItems > 0 && (
                                     <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs w-6 h-6 rounded-full flex items-center justify-center font-bold">
                     {totalItems}
@@ -178,6 +234,33 @@ export default function ShopClient({ products }: ShopClientProps) {
                             </button>
                         </div>
                     </div>
+
+                    {/* Mobile Menu */}
+                    {showMobileMenu && (
+                        <div className="md:hidden mt-4 py-4 border-t space-y-2">
+                            <Link href="/" className="block py-2 text-gray-700 hover:text-green-600 font-medium">
+                                Home
+                            </Link>
+                            <Link href="/certifications" className="block py-2 text-gray-700 hover:text-green-600 font-medium">
+                                <Award className="w-4 h-4 inline mr-2" />
+                                Certifications
+                            </Link>
+                            <Link href="/contact" className="block py-2 text-gray-700 hover:text-green-600 font-medium">
+                                <Phone className="w-4 h-4 inline mr-2" />
+                                Contact
+                            </Link>
+                            {user ? (
+                                <Link href="/profile" className="block py-2 text-gray-700 hover:text-green-600 font-medium">
+                                    <User className="w-4 h-4 inline mr-2" />
+                                    Profile
+                                </Link>
+                            ) : (
+                                <Link href="/login" className="block py-2 text-gray-700 hover:text-green-600 font-medium">
+                                    Login
+                                </Link>
+                            )}
+                        </div>
+                    )}
                 </div>
             </header>
 
@@ -188,6 +271,36 @@ export default function ShopClient({ products }: ShopClientProps) {
                 {/* Show products only after location is detected */}
                 {userLocation && (
                     <>
+                        {/* Category Tabs */}
+                        <div className="mb-6 bg-white rounded-xl shadow-sm border border-gray-200 p-4">
+                            <h3 className="font-semibold text-gray-900 mb-3">Shop by Category</h3>
+                            <div className="flex flex-wrap gap-2">
+                                <button
+                                    onClick={() => setSelectedCategory('all')}
+                                    className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                                        selectedCategory === 'all'
+                                            ? 'bg-green-600 text-white'
+                                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                                    }`}
+                                >
+                                    All Products
+                                </button>
+                                {categories.map((category) => (
+                                    <button
+                                        key={category.id}
+                                        onClick={() => setSelectedCategory(category.slug)}
+                                        className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                                            selectedCategory === category.slug
+                                                ? 'bg-green-600 text-white'
+                                                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                                        }`}
+                                    >
+                                        {category.name}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
                         {/* Search Bar */}
                         <div className="mb-6">
                             <div className="relative">
@@ -218,8 +331,16 @@ export default function ShopClient({ products }: ShopClientProps) {
 
                         {/* Products Header */}
                         <div className="mb-6">
-                            <h2 className="text-2xl font-bold text-gray-900 mb-2">Fresh Vegetables</h2>
-                            <p className="text-gray-600">Farm-fresh vegetables delivered to your door</p>
+                            <h2 className="text-2xl font-bold text-gray-900 mb-2">
+                                {selectedCategory === 'all'
+                                    ? 'All Products'
+                                    : categories.find(c => c.slug === selectedCategory)?.name}
+                            </h2>
+                            <p className="text-gray-600">
+                                {selectedCategory === 'all'
+                                    ? 'Browse our complete collection of fresh produce'
+                                    : categories.find(c => c.slug === selectedCategory)?.description || 'Farm-fresh produce'}
+                            </p>
                             {!isInServiceArea && (
                                 <div className="mt-3 bg-orange-100 text-orange-800 px-4 py-2 rounded-lg text-sm">
                                     ⚠️ Browsing only - You cannot place orders outside our service area
@@ -238,29 +359,30 @@ export default function ShopClient({ products }: ShopClientProps) {
                             ))}
                         </div>
 
-                        {filteredProducts.length === 0 && searchQuery && (
+                        {filteredProducts.length === 0 && (
                             <div className="text-center py-12">
                                 <Search className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-                                <p className="text-gray-500">No products found for "{searchQuery}"</p>
+                                <p className="text-gray-500">
+                                    {searchQuery
+                                        ? `No products found for "${searchQuery}"`
+                                        : 'No products in this category'}
+                                </p>
                                 <button
-                                    onClick={() => setSearchQuery('')}
+                                    onClick={() => {
+                                        setSearchQuery('')
+                                        setSelectedCategory('all')
+                                    }}
                                     className="mt-4 text-green-600 hover:text-green-700 font-medium"
                                 >
-                                    Clear search
+                                    View All Products
                                 </button>
-                            </div>
-                        )}
-
-                        {products.length === 0 && (
-                            <div className="text-center py-12">
-                                <p className="text-gray-500">No products available today</p>
                             </div>
                         )}
                     </>
                 )}
             </div>
 
-            {/* Cart Sidebar */}
+            {/* Cart Sidebar - Same as before */}
             {showCart && (
                 <div className="fixed inset-0 bg-black bg-opacity-50 z-50" onClick={() => setShowCart(false)}>
                     <div

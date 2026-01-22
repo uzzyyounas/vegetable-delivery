@@ -94,8 +94,14 @@ export default function CheckoutPage() {
                 .single()
 
             if (orderError) {
-                console.error('Order creation error:', orderError)
-                throw new Error('Failed to create order')
+                console.error('Order creation error - ss:', {
+                    message: orderError?.message,
+                    details: orderError?.details,
+                    hint: orderError?.hint,
+                    code: orderError?.code
+                })
+                // console.error('Order creation error:', orderError)
+                throw new Error('Failed to create order -ss')
             }
 
             // Create order items
