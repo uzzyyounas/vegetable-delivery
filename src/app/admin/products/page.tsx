@@ -3,7 +3,7 @@
 
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { Plus, Edit, Trash2, Save, X } from 'lucide-react'
+import { Plus, Edit, Trash2, Save, X, ChevronLeft, ChevronRight } from 'lucide-react'
 
 interface Product {
     id: string
@@ -12,6 +12,11 @@ interface Product {
     category: string | null
     pricing_type: 'daily' | 'tiered'
     is_active: boolean
+}
+interface ProductCategory {
+    id: string
+    name: string
+    slug: string
 }
 
 interface DailyPrice {
@@ -31,36 +36,45 @@ export default function AdminProductsPage() {
     const [editingProduct, setEditingProduct] = useState<string | null>(null)
     const [priceUpdates, setPriceUpdates] = useState<Record<string, any>>({})
     const [showAddProduct, setShowAddProduct] = useState(false)
+    const [categories, setCategories] = useState<ProductCategory[]>([])
+    // const [newProduct, setNewProduct] = useState({
+    //     name: '',
+    //     description: '',
+    //     category: 'Vegetables',
+    //     pricing_type: 'daily' as 'daily' | 'tiered'
+    // })
     const [newProduct, setNewProduct] = useState({
         name: '',
         description: '',
-        category: 'Vegetables',
+        category_id: '',
         pricing_type: 'daily' as 'daily' | 'tiered'
     })
+
+    // Pagination
+    const [currentPage, setCurrentPage] = useState(1)
+    const recordsPerPage = 5
 
     const supabase = createClient()
     const today = new Date().toISOString().split('T')[0]
 
     useEffect(() => {
         fetchProducts()
+        fetchCategories()
     }, [])
 
     const fetchProducts = async () => {
         setIsLoading(true)
 
-        // Fetch products
         const { data: productsData } = await supabase
             .from('products')
             .select('*')
             .order('name')
 
-        // Fetch today's daily prices
         const { data: dailyPricesData } = await supabase
             .from('daily_prices')
             .select('*')
             .eq('effective_date', today)
 
-        // Fetch today's weight tiers
         const { data: weightTiersData } = await supabase
             .from('weight_tiers')
             .select('*')
@@ -69,19 +83,15 @@ export default function AdminProductsPage() {
         if (productsData) {
             setProducts(productsData)
 
-            // Map daily prices by product_id
             const pricesMap: Record<string, DailyPrice> = {}
             dailyPricesData?.forEach(dp => {
                 pricesMap[dp.product_id] = { price_per_kg: dp.price_per_kg }
             })
             setDailyPrices(pricesMap)
 
-            // Map weight tiers by product_id
             const tiersMap: Record<string, WeightTier[]> = {}
             weightTiersData?.forEach(wt => {
-                if (!tiersMap[wt.product_id]) {
-                    tiersMap[wt.product_id] = []
-                }
+                if (!tiersMap[wt.product_id]) tiersMap[wt.product_id] = []
                 tiersMap[wt.product_id].push({
                     weight_grams: wt.weight_grams,
                     price: wt.price
@@ -93,24 +103,37 @@ export default function AdminProductsPage() {
         setIsLoading(false)
     }
 
+    const fetchCategories = async () => {
+        const { data, error } = await supabase
+            .from('product_categories')
+            .select('id, name, slug')
+            .eq('is_active', true)
+            .order('display_order')
+
+        if (error) {
+            console.error('Error fetching categories:', error)
+            return
+        }
+
+        setCategories(data || [])
+    }
+
     const handleAddProduct = async () => {
-        if (!newProduct.name.trim()) {
-            alert('Product name is required')
+        if (!newProduct.name.trim() || !newProduct.category_id) {
+            alert('Product name and category is required')
             return
         }
 
         try {
-            const { data, error } = await supabase
+            const { error } = await supabase
                 .from('products')
                 .insert({
                     name: newProduct.name,
                     description: newProduct.description || null,
-                    category: newProduct.category,
+                    category_id: newProduct.category_id,
                     pricing_type: newProduct.pricing_type,
                     is_active: true
                 })
-                .select()
-                .single()
 
             if (error) throw error
 
@@ -119,9 +142,10 @@ export default function AdminProductsPage() {
             setNewProduct({
                 name: '',
                 description: '',
-                category: 'Vegetables',
+                category_id: '',
                 pricing_type: 'daily'
             })
+
             fetchProducts()
         } catch (error: any) {
             console.error('Error adding product:', error)
@@ -141,14 +165,12 @@ export default function AdminProductsPage() {
                     return
                 }
 
-                // Delete old price for today
                 await supabase
                     .from('daily_prices')
                     .delete()
                     .eq('product_id', productId)
                     .eq('effective_date', today)
 
-                // Insert new price
                 const { error } = await supabase
                     .from('daily_prices')
                     .insert({
@@ -166,7 +188,6 @@ export default function AdminProductsPage() {
                     return
                 }
 
-                // Validate tiers
                 for (const tier of tiers) {
                     if (!tier.weight_grams || !tier.price || isNaN(parseInt(tier.weight_grams)) || isNaN(parseFloat(tier.price))) {
                         alert('Please enter valid weight and price for all tiers')
@@ -174,14 +195,12 @@ export default function AdminProductsPage() {
                     }
                 }
 
-                // Delete old tiers for today
                 await supabase
                     .from('weight_tiers')
                     .delete()
                     .eq('product_id', productId)
                     .eq('effective_date', today)
 
-                // Insert new tiers
                 const tierInserts = tiers.map((t: any) => ({
                     product_id: productId,
                     weight_grams: parseInt(t.weight_grams),
@@ -249,6 +268,12 @@ export default function AdminProductsPage() {
         })
     }
 
+    // Pagination logic
+    const indexOfLastRecord = currentPage * recordsPerPage
+    const indexOfFirstRecord = indexOfLastRecord - recordsPerPage
+    const currentRecords = products.slice(indexOfFirstRecord, indexOfLastRecord)
+    const totalPages = Math.ceil(products.length / recordsPerPage)
+
     if (isLoading) {
         return (
             <div className="flex items-center justify-center h-64">
@@ -307,17 +332,36 @@ export default function AdminProductsPage() {
                                 />
                             </div>
 
+                            {/*<div>*/}
+                            {/*    <label className="block text-sm font-medium text-gray-700 mb-2">*/}
+                            {/*        Category*/}
+                            {/*    </label>*/}
+                            {/*    <input*/}
+                            {/*        type="text"*/}
+                            {/*        value={newProduct.category}*/}
+                            {/*        onChange={(e) => setNewProduct({ ...newProduct, category: e.target.value })}*/}
+                            {/*        className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-green-500"*/}
+                            {/*        placeholder="Vegetables"*/}
+                            {/*    />*/}
+                            {/*</div>*/}
                             <div>
                                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                                    Category
+                                    Category *
                                 </label>
-                                <input
-                                    type="text"
-                                    value={newProduct.category}
-                                    onChange={(e) => setNewProduct({ ...newProduct, category: e.target.value })}
+                                <select
+                                    value={newProduct.category_id}
+                                    onChange={(e) =>
+                                        setNewProduct({ ...newProduct, category_id: e.target.value })
+                                    }
                                     className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-green-500"
-                                    placeholder="Vegetables"
-                                />
+                                >
+                                    <option value="">Select category</option>
+                                    {categories.map((cat) => (
+                                        <option key={cat.id} value={cat.id}>
+                                            {cat.name}
+                                        </option>
+                                    ))}
+                                </select>
                             </div>
 
                             <div>
@@ -361,219 +405,215 @@ export default function AdminProductsPage() {
                 </div>
             )}
 
-            {/* Products List */}
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-                <div className="divide-y">
-                    {products.length === 0 ? (
-                        <div className="p-12 text-center">
-                            <p className="text-gray-500">No products yet. Add your first product!</p>
-                        </div>
-                    ) : (
-                        products.map(product => (
-                            <div key={product.id} className="p-6">
-                                <div className="flex items-start justify-between mb-4">
-                                    <div className="flex-1">
-                                        <div className="flex items-center gap-3 mb-2">
-                                            <h3 className="font-semibold text-gray-900 text-lg">{product.name}</h3>
-                                            <span className={`text-xs px-2 py-1 rounded ${
-                                                product.pricing_type === 'daily'
-                                                    ? 'bg-blue-100 text-blue-800'
-                                                    : 'bg-purple-100 text-purple-800'
-                                            }`}>
-                        {product.pricing_type === 'daily' ? 'Daily Pricing' : 'Tiered Pricing'}
-                      </span>
-                                            {!product.is_active && (
-                                                <span className="text-xs px-2 py-1 rounded bg-red-100 text-red-800">
-                          Inactive
-                        </span>
-                                            )}
-                                        </div>
-                                        <p className="text-sm text-gray-600">{product.description}</p>
-                                        {product.category && (
-                                            <p className="text-xs text-gray-500 mt-1">Category: {product.category}</p>
-                                        )}
-                                    </div>
+            {/* Products Table */}
+            <div className="overflow-x-auto bg-white rounded-xl shadow-sm border border-gray-200">
+                <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-50">
+                    <tr>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Product
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Pricing Type
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Price
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Actions
+                        </th>
+                    </tr>
+                    </thead>
 
+                    <tbody className="bg-white divide-y divide-gray-200">
+                    {currentRecords.map((product) => (
+                        <tr key={product.id}>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                                <div className="text-sm font-medium text-gray-900">{product.name}</div>
+                                <div className="text-xs text-gray-500">{product.category}</div>
+                                <div className="text-xs text-gray-400">{product.description}</div>
+                            </td>
+
+                            <td className="px-6 py-4 whitespace-nowrap">
+                                    <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
+                                        product.pricing_type === 'daily'
+                                            ? 'bg-blue-100 text-blue-800'
+                                            : 'bg-purple-100 text-purple-800'
+                                    }`}>
+                                        {product.pricing_type === 'daily' ? 'Daily' : 'Tiered'}
+                                    </span>
+
+                                {!product.is_active && (
+                                    <div className="text-xs mt-1 text-red-600">Inactive</div>
+                                )}
+                            </td>
+
+                            <td className="px-6 py-4 whitespace-nowrap">
+                                {product.pricing_type === 'daily' ? (
+                                    editingProduct === product.id ? (
+                                        <input
+                                            type="number"
+                                            step="0.01"
+                                            value={priceUpdates[product.id]?.price_per_kg || ''}
+                                            onChange={(e) => setPriceUpdates({
+                                                ...priceUpdates,
+                                                [product.id]: { price_per_kg: e.target.value }
+                                            })}
+                                            className="w-40 px-3 py-2 border rounded-lg"
+                                        />
+                                    ) : (
+                                        <span className="text-sm font-semibold text-green-600">
+                                                Rs. {dailyPrices[product.id]?.price_per_kg?.toFixed(2) || 'Not set'}
+                                            </span>
+                                    )
+                                ) : (
+                                    editingProduct === product.id ? (
+                                        <div className="space-y-2">
+                                            {(priceUpdates[product.id]?.tiers || []).map((tier: any, index: number) => (
+                                                <div key={index} className="flex items-center gap-2">
+                                                    <input
+                                                        type="number"
+                                                        value={tier.weight_grams}
+                                                        onChange={(e) => {
+                                                            const newTiers = [...priceUpdates[product.id].tiers]
+                                                            newTiers[index].weight_grams = e.target.value
+                                                            setPriceUpdates({
+                                                                ...priceUpdates,
+                                                                [product.id]: { tiers: newTiers }
+                                                            })
+                                                        }}
+                                                        placeholder="Grams"
+                                                        className="w-24 px-2 py-1 border rounded-lg"
+                                                    />
+                                                    <span>=</span>
+                                                    <input
+                                                        type="number"
+                                                        step="0.01"
+                                                        value={tier.price}
+                                                        onChange={(e) => {
+                                                            const newTiers = [...priceUpdates[product.id].tiers]
+                                                            newTiers[index].price = e.target.value
+                                                            setPriceUpdates({
+                                                                ...priceUpdates,
+                                                                [product.id]: { tiers: newTiers }
+                                                            })
+                                                        }}
+                                                        placeholder="Price"
+                                                        className="w-24 px-2 py-1 border rounded-lg"
+                                                    />
+                                                    <button onClick={() => handleRemoveTier(product.id, index)}>
+                                                        <Trash2 className="w-4 h-4 text-red-600" />
+                                                    </button>
+                                                </div>
+                                            ))}
+                                            <button
+                                                onClick={() => handleAddTier(product.id)}
+                                                className="text-sm bg-blue-600 text-white px-3 py-1 rounded mt-2"
+                                            >
+                                                <Plus className="w-4 h-4 inline-block" /> Add Tier
+                                            </button>
+                                        </div>
+                                    ) : (
+                                        <div className="space-y-1">
+                                            {(weightTiers[product.id] || []).sort((a, b) => a.weight_grams - b.weight_grams).map((tier, idx) => (
+                                                <div key={idx} className="text-sm">
+                                                    {tier.weight_grams} g = <span className="font-semibold text-green-600">Rs. {tier.price.toFixed(2)}</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )
+                                )}
+                            </td>
+
+                            <td className="px-6 py-4 whitespace-nowrap">
+                                {editingProduct === product.id ? (
                                     <div className="flex gap-2">
-                                        {editingProduct === product.id ? (
-                                            <>
-                                                <button
-                                                    onClick={() => handleUpdatePrice(product.id)}
-                                                    className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 flex items-center gap-2"
-                                                >
-                                                    <Save className="w-4 h-4" />
-                                                    Save
-                                                </button>
-                                                <button
-                                                    onClick={() => {
-                                                        setEditingProduct(null)
-                                                        setPriceUpdates({})
-                                                    }}
-                                                    className="bg-gray-200 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-300 flex items-center gap-2"
-                                                >
-                                                    <X className="w-4 h-4" />
-                                                    Cancel
-                                                </button>
-                                            </>
-                                        ) : (
-                                            <>
-                                                <button
-                                                    onClick={() => {
-                                                        setEditingProduct(product.id)
-                                                        if (product.pricing_type === 'daily') {
-                                                            setPriceUpdates({
-                                                                ...priceUpdates,
-                                                                [product.id]: {
-                                                                    price_per_kg: dailyPrices[product.id]?.price_per_kg || ''
-                                                                }
-                                                            })
-                                                        } else {
-                                                            setPriceUpdates({
-                                                                ...priceUpdates,
-                                                                [product.id]: {
-                                                                    tiers: (weightTiers[product.id] || []).map(t => ({
-                                                                        weight_grams: t.weight_grams,
-                                                                        price: t.price
-                                                                    }))
-                                                                }
-                                                            })
+                                        <button
+                                            onClick={() => handleUpdatePrice(product.id)}
+                                            className="bg-green-600 text-white px-3 py-2 rounded-lg hover:bg-green-700 flex items-center gap-2"
+                                        >
+                                            <Save className="w-4 h-4" />
+                                            Save
+                                        </button>
+                                        <button
+                                            onClick={() => {
+                                                setEditingProduct(null)
+                                                setPriceUpdates({})
+                                            }}
+                                            className="bg-gray-200 text-gray-700 px-3 py-2 rounded-lg hover:bg-gray-300 flex items-center gap-2"
+                                        >
+                                            <X className="w-4 h-4" />
+                                            Cancel
+                                        </button>
+                                    </div>
+                                ) : (
+                                    <div className="flex gap-2">
+                                        <button
+                                            onClick={() => {
+                                                setEditingProduct(product.id)
+                                                if (product.pricing_type === 'daily') {
+                                                    setPriceUpdates({
+                                                        ...priceUpdates,
+                                                        [product.id]: {
+                                                            price_per_kg: dailyPrices[product.id]?.price_per_kg || ''
                                                         }
-                                                    }}
-                                                    className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center gap-2"
-                                                >
-                                                    <Edit className="w-4 h-4" />
-                                                    Edit Price
-                                                </button>
-                                                <button
-                                                    onClick={() => handleDeleteProduct(product.id)}
-                                                    className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 flex items-center gap-2"
-                                                >
-                                                    <Trash2 className="w-4 h-4" />
-                                                </button>
-                                            </>
-                                        )}
-                                    </div>
-                                </div>
-
-                                {/* Daily Pricing */}
-                                {product.pricing_type === 'daily' && (
-                                    <div className="bg-gray-50 rounded-lg p-4">
-                                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                                            Price per kg (Rs.)
-                                        </label>
-                                        {editingProduct === product.id ? (
-                                            <input
-                                                type="number"
-                                                step="0.01"
-                                                value={priceUpdates[product.id]?.price_per_kg || ''}
-                                                onChange={(e) => setPriceUpdates({
-                                                    ...priceUpdates,
-                                                    [product.id]: { price_per_kg: e.target.value }
-                                                })}
-                                                className="w-full max-w-xs px-4 py-2 border rounded-lg"
-                                                placeholder="Enter price"
-                                            />
-                                        ) : (
-                                            <p className="text-2xl font-bold text-green-600">
-                                                Rs.{dailyPrices[product.id]?.price_per_kg?.toFixed(2) || 'Not set'}
-                                            </p>
-                                        )}
+                                                    })
+                                                } else {
+                                                    setPriceUpdates({
+                                                        ...priceUpdates,
+                                                        [product.id]: {
+                                                            tiers: (weightTiers[product.id] || []).map(t => ({
+                                                                weight_grams: t.weight_grams,
+                                                                price: t.price
+                                                            }))
+                                                        }
+                                                    })
+                                                }
+                                            }}
+                                            className="bg-blue-600 text-white px-3 py-2 rounded-lg hover:bg-blue-700 flex items-center gap-2"
+                                        >
+                                            <Edit className="w-4 h-4" />
+                                            Edit
+                                        </button>
+                                        <button
+                                            onClick={() => handleDeleteProduct(product.id)}
+                                            className="bg-red-600 text-white px-3 py-2 rounded-lg hover:bg-red-700 flex items-center gap-2"
+                                        >
+                                            <Trash2 className="w-4 h-4" />
+                                            Delete
+                                        </button>
                                     </div>
                                 )}
+                            </td>
+                        </tr>
+                    ))}
+                    </tbody>
+                </table>
+            </div>
 
-                                {/* Tiered Pricing */}
-                                {product.pricing_type === 'tiered' && (
-                                    <div className="bg-gray-50 rounded-lg p-4">
-                                        <div className="flex items-center justify-between mb-3">
-                                            <label className="block text-sm font-medium text-gray-700">
-                                                Weight Tiers
-                                            </label>
-                                            {editingProduct === product.id && (
-                                                <button
-                                                    onClick={() => handleAddTier(product.id)}
-                                                    className="text-sm bg-blue-600 text-white px-3 py-1 rounded flex items-center gap-1"
-                                                >
-                                                    <Plus className="w-4 h-4" />
-                                                    Add Tier
-                                                </button>
-                                            )}
-                                        </div>
+            {/* Pagination */}
+            <div className="flex justify-between items-center mt-4">
+                <button
+                    onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
+                    disabled={currentPage === 1}
+                    className="flex items-center gap-2 bg-gray-200 px-4 py-2 rounded hover:bg-gray-300 disabled:opacity-50"
+                >
+                    <ChevronLeft className="w-4 h-4" />
+                    Previous
+                </button>
 
-                                        {editingProduct === product.id ? (
-                                            <div className="space-y-2">
-                                                {(priceUpdates[product.id]?.tiers || []).length === 0 ? (
-                                                    <p className="text-sm text-gray-500">No tiers yet. Click "Add Tier" to add one.</p>
-                                                ) : (
-                                                    (priceUpdates[product.id]?.tiers || []).map((tier: any, index: number) => (
-                                                        <div key={index} className="flex gap-2 items-center">
-                                                            <input
-                                                                type="number"
-                                                                value={tier.weight_grams}
-                                                                onChange={(e) => {
-                                                                    const newTiers = [...priceUpdates[product.id].tiers]
-                                                                    newTiers[index].weight_grams = e.target.value
-                                                                    setPriceUpdates({
-                                                                        ...priceUpdates,
-                                                                        [product.id]: { tiers: newTiers }
-                                                                    })
-                                                                }}
-                                                                placeholder="Grams"
-                                                                className="w-32 px-3 py-2 border rounded-lg"
-                                                            />
-                                                            <span className="text-gray-500">grams =</span>
-                                                            <input
-                                                                type="number"
-                                                                step="0.01"
-                                                                value={tier.price}
-                                                                onChange={(e) => {
-                                                                    const newTiers = [...priceUpdates[product.id].tiers]
-                                                                    newTiers[index].price = e.target.value
-                                                                    setPriceUpdates({
-                                                                        ...priceUpdates,
-                                                                        [product.id]: { tiers: newTiers }
-                                                                    })
-                                                                }}
-                                                                placeholder="Price"
-                                                                className="w-32 px-3 py-2 border rounded-lg"
-                                                            />
-                                                            <button
-                                                                onClick={() => handleRemoveTier(product.id, index)}
-                                                                className="text-red-600 hover:text-red-700"
-                                                            >
-                                                                <Trash2 className="w-4 h-4" />
-                                                            </button>
-                                                        </div>
-                                                    ))
-                                                )}
-                                            </div>
-                                        ) : (
-                                            <div className="space-y-2">
-                                                {weightTiers[product.id] && weightTiers[product.id].length > 0 ? (
-                                                    weightTiers[product.id]
-                                                        .sort((a, b) => a.weight_grams - b.weight_grams)
-                                                        .map((tier, index) => (
-                                                            <div key={index} className="flex justify-between text-sm">
-                                <span className="text-gray-700">
-                                  {tier.weight_grams >= 1000
-                                      ? `${tier.weight_grams / 1000} kg`
-                                      : `${tier.weight_grams} g`}
-                                </span>
-                                                                <span className="font-semibold text-green-600">
-                                  Rs.{tier.price.toFixed(2)}
-                                </span>
-                                                            </div>
-                                                        ))
-                                                ) : (
-                                                    <p className="text-sm text-gray-500">No tiers set for today</p>
-                                                )}
-                                            </div>
-                                        )}
-                                    </div>
-                                )}
-                            </div>
-                        ))
-                    )}
-                </div>
+                <span className="text-sm text-gray-600">
+                    Page {currentPage} of {totalPages}
+                </span>
+
+                <button
+                    onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
+                    disabled={currentPage === totalPages}
+                    className="flex items-center gap-2 bg-gray-200 px-4 py-2 rounded hover:bg-gray-300 disabled:opacity-50"
+                >
+                    Next
+                    <ChevronRight className="w-4 h-4" />
+                </button>
             </div>
         </div>
     )

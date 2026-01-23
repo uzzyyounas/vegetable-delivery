@@ -3,6 +3,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Leaf, Mail, Lock, Loader2, User, Phone } from 'lucide-react'
 import Link from 'next/link'
@@ -18,8 +19,32 @@ export default function LoginPage() {
     const [isLoading, setIsLoading] = useState(false)
     const [error, setError] = useState('')
 
+    const searchParams = useSearchParams()
+    const isAdminLogin = searchParams.get('admin') === 'true'
+
     const router = useRouter()
     const supabase = createClient()
+
+    // const handleLogin = async (e: React.FormEvent) => {
+    //     e.preventDefault()
+    //     setIsLoading(true)
+    //     setError('')
+    //
+    //     try {
+    //         const { data, error } = await supabase.auth.signInWithPassword({
+    //             email: formData.email,
+    //             password: formData.password,
+    //         })
+    //
+    //         if (error) throw error
+    //
+    //         router.push('/shop')
+    //     } catch (error: any) {
+    //         setError(error.message || 'Invalid email or password')
+    //     } finally {
+    //         setIsLoading(false)
+    //     }
+    // }
 
     const handleLogin = async (e: React.FormEvent) => {
         e.preventDefault()
@@ -33,14 +58,31 @@ export default function LoginPage() {
             })
 
             if (error) throw error
+            if (!data.user) throw new Error('Login failed')
 
-            router.push('/profile')
+            // 🔍 Fetch role
+            const { data: profile, error: profileError } = await supabase
+                .from('profiles')
+                .select('role')
+                .eq('id', data.user.id)
+                .single()
+
+            if (profileError) throw profileError
+
+            // 🛡 Admin login flow
+            if (profile?.role === 'admin') {
+                router.push('/admin/dashboard')
+            } else {
+                router.push('/shop')
+            }
         } catch (error: any) {
             setError(error.message || 'Invalid email or password')
         } finally {
             setIsLoading(false)
         }
     }
+
+
 
     const handleRegister = async (e: React.FormEvent) => {
         e.preventDefault()

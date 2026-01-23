@@ -15,10 +15,10 @@ export default function AdminLayout({
     const [isSidebarOpen, setIsSidebarOpen] = useState(true)
 
     const navigation = [
+        { name: 'Dashboard', href: '/admin/dashboard', icon: Package },
         { name: 'Products', href: '/admin/products', icon: Package },
         { name: 'Delivery Slots', href: '/admin/delivery-slots', icon: Calendar },
         { name: 'Service Area', href: '/admin/service-area', icon: Globe },
-        { name: 'Service Zones', href: '/admin/service-zones', icon: MapPin },
         { name: 'Orders', href: '/admin/orders', icon: ShoppingBag },
         { name: 'Business Settings', href: '/admin/business-info', icon: Settings },
     ]

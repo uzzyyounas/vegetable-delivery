@@ -4,7 +4,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { User, Package, LogOut, Loader2, Mail, Phone, MapPin, Calendar } from 'lucide-react'
+import { User, Package, LogOut, Loader2, Mail, Phone, MapPin, Calendar, Shield } from 'lucide-react'
 import { OrderStatusBadge } from '@/components/orders/OrderTracker'
 import Link from 'next/link'
 
@@ -61,13 +61,13 @@ export default function ProfilePage() {
             const { data: ordersData } = await supabase
                 .from('orders')
                 .select(`
-          id,
-          order_number,
-          total_amount,
-          status,
-          created_at,
-          delivery_slot:delivery_slots(slot_date, start_time)
-        `)
+                    id,
+                    order_number,
+                    total_amount,
+                    status,
+                    created_at,
+                    delivery_slot:delivery_slots(slot_date, start_time)
+                `)
                 .eq('user_id', user.id)
                 .order('created_at', { ascending: false })
 
@@ -139,6 +139,7 @@ export default function ProfilePage() {
                             </div>
 
                             {/* Navigation */}
+                            {/* Navigation */}
                             <nav className="space-y-2">
                                 <button
                                     onClick={() => setActiveTab('orders')}
@@ -151,6 +152,7 @@ export default function ProfilePage() {
                                     <Package className="w-5 h-5" />
                                     My Orders
                                 </button>
+
                                 <button
                                     onClick={() => setActiveTab('profile')}
                                     className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
@@ -162,7 +164,26 @@ export default function ProfilePage() {
                                     <User className="w-5 h-5" />
                                     Profile Details
                                 </button>
+
+                                {/* Admin Panel */}
+                                <Link
+                                    href="/admin/dashboard"
+                                    className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
+                                        profile?.role === 'admin'
+                                            ? 'bg-green-50 text-blue-700 font-medium hover:bg-blue-100'
+                                            : 'text-gray-400 bg-gray-100 cursor-not-allowed'
+                                    }`}
+                                    aria-disabled={profile?.role !== 'admin'}
+                                    onClick={(e) => {
+                                        if (profile?.role !== 'admin') e.preventDefault()
+                                    }}
+                                >
+                                    <Shield className="w-5 h-5" />
+                                    Admin Panel
+                                </Link>
                             </nav>
+
+
                         </div>
                     </div>
 
@@ -200,7 +221,7 @@ export default function ProfilePage() {
                                                             Placed on {formatDate(order.created_at)}
                                                         </p>
                                                     </div>
-                                                    <div className="flex items-center gap-4">
+                                                    <div className="flex items-center gap-4 flex-wrap justify-end">
                                                         <div className="text-right">
                                                             <p className="text-sm text-gray-600">Total</p>
                                                             <p className="text-xl font-bold text-green-600">
@@ -215,19 +236,19 @@ export default function ProfilePage() {
                                                     <div className="flex items-center gap-2 text-sm text-gray-600 mb-4 pb-4 border-b">
                                                         <Calendar className="w-4 h-4" />
                                                         <span>
-                              Delivery: {formatDate(order.delivery_slot.slot_date)} at{' '}
+                                                            Delivery: {formatDate(order.delivery_slot.slot_date)} at{' '}
                                                             {new Date(`2000-01-01T${order.delivery_slot.start_time}`).toLocaleTimeString('en-IN', {
                                                                 hour: 'numeric',
                                                                 minute: '2-digit',
                                                                 hour12: true
                                                             })}
-                            </span>
+                                                        </span>
                                                     </div>
                                                 )}
 
-                                                <div className="flex gap-3">
+                                                <div className="flex flex-col sm:flex-row gap-3">
                                                     <Link
-                                                        href={`/orders/${order.id}`}
+                                                        href={`/track-order/${order.id}`}
                                                         className="flex-1 bg-green-600 text-white text-center py-2.5 rounded-lg font-medium hover:bg-green-700 transition-colors"
                                                     >
                                                         Track Order

@@ -101,7 +101,7 @@ export default function OrderSuccessPage() {
                 {/* Action Buttons */}
                 <div className="space-y-3">
                     <Link
-                        href={`/orders/${orderId}`}
+                        href={`/track-order/${orderId}`}
                         className="block w-full bg-green-600 text-white text-center py-4 rounded-lg font-semibold hover:bg-green-700 transition-colors"
                     >
                         Track My Order
