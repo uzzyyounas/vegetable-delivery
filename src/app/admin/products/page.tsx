@@ -1,589 +1,627 @@
 // src/app/admin/products/page.tsx
 'use client'
 
-import { useState, useEffect } from 'react'
-import { createClient } from '@/lib/supabase/client'
-import { Plus, Edit, Trash2, Save, X, ChevronLeft, ChevronRight } from 'lucide-react'
+import React, { useState, useEffect } from 'react';
+import {
+    Plus,
+    Search,
+    Filter,
+    Edit2,
+    Trash2,
+    MoreVertical,
+    Eye,
+    EyeOff,
+    Package,
+    DollarSign,
+    X,
+    Save,
+    Upload
+} from 'lucide-react';
+import { createClient } from '@supabase/supabase-js';
 
-interface Product {
-    id: string
-    name: string
-    description: string | null
-    category: string | null
-    pricing_type: 'daily' | 'tiered'
-    is_active: boolean
-}
-interface ProductCategory {
-    id: string
-    name: string
-    slug: string
-}
+const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+);
 
-interface DailyPrice {
-    price_per_kg: number
-}
-
-interface WeightTier {
-    weight_grams: number
-    price: number
-}
-
-export default function AdminProductsPage() {
-    const [products, setProducts] = useState<Product[]>([])
-    const [dailyPrices, setDailyPrices] = useState<Record<string, DailyPrice>>({})
-    const [weightTiers, setWeightTiers] = useState<Record<string, WeightTier[]>>({})
-    const [isLoading, setIsLoading] = useState(true)
-    const [editingProduct, setEditingProduct] = useState<string | null>(null)
-    const [priceUpdates, setPriceUpdates] = useState<Record<string, any>>({})
-    const [showAddProduct, setShowAddProduct] = useState(false)
-    const [categories, setCategories] = useState<ProductCategory[]>([])
-    // const [newProduct, setNewProduct] = useState({
-    //     name: '',
-    //     description: '',
-    //     category: 'Vegetables',
-    //     pricing_type: 'daily' as 'daily' | 'tiered'
-    // })
-    const [newProduct, setNewProduct] = useState({
+// Product Modal Component
+const ProductModal = ({ isOpen, onClose, product, onSave }) => {
+    const [loading, setLoading] = useState(false);
+    const [categories, setCategories] = useState([]);
+    const [formData, setFormData] = useState({
         name: '',
         description: '',
         category_id: '',
-        pricing_type: 'daily' as 'daily' | 'tiered'
-    })
-
-    // Pagination
-    const [currentPage, setCurrentPage] = useState(1)
-    const recordsPerPage = 5
-
-    const supabase = createClient()
-    const today = new Date().toISOString().split('T')[0]
+        image_url: '',
+        base_unit: 'kg',
+        pricing_type: 'daily',
+        is_active: true,
+        price_per_kg: ''
+    });
 
     useEffect(() => {
-        fetchProducts()
-        fetchCategories()
-    }, [])
+        if (isOpen) {
+            fetchCategories();
+            if (product) {
+                loadProductData();
+            } else {
+                resetForm();
+            }
+        }
+    }, [isOpen, product]);
 
-    const fetchProducts = async () => {
-        setIsLoading(true)
+    const fetchCategories = async () => {
+        const { data } = await supabase
+            .from('product_categories')
+            .select('id, name')
+            .eq('is_active', true)
+            .order('display_order');
 
-        const { data: productsData } = await supabase
-            .from('products')
-            .select('*')
-            .order('name')
+        if (data) setCategories(data);
+    };
 
-        const { data: dailyPricesData } = await supabase
+    const loadProductData = async () => {
+        const { data: priceData } = await supabase
             .from('daily_prices')
-            .select('*')
-            .eq('effective_date', today)
+            .select('price_per_kg')
+            .eq('product_id', product.id)
+            .order('effective_date', { ascending: false })
+            .limit(1)
+            .single();
 
-        const { data: weightTiersData } = await supabase
-            .from('weight_tiers')
-            .select('*')
-            .eq('effective_date', today)
+        setFormData({
+            name: product.name || '',
+            description: product.description || '',
+            category_id: product.category_id || '',
+            image_url: product.image_url || '',
+            base_unit: product.base_unit || 'kg',
+            pricing_type: product.pricing_type || 'daily',
+            is_active: product.is_active ?? true,
+            price_per_kg: priceData?.price_per_kg || ''
+        });
+    };
 
-        if (productsData) {
-            setProducts(productsData)
+    const resetForm = () => {
+        setFormData({
+            name: '',
+            description: '',
+            category_id: '',
+            image_url: '',
+            base_unit: 'kg',
+            pricing_type: 'daily',
+            is_active: true,
+            price_per_kg: ''
+        });
+    };
 
-            const pricesMap: Record<string, DailyPrice> = {}
-            dailyPricesData?.forEach(dp => {
-                pricesMap[dp.product_id] = { price_per_kg: dp.price_per_kg }
-            })
-            setDailyPrices(pricesMap)
+    const handleChange = (e) => {
+        const { name, value, type, checked } = e.target;
+        setFormData(prev => ({
+            ...prev,
+            [name]: type === 'checkbox' ? checked : value
+        }));
+    };
 
-            const tiersMap: Record<string, WeightTier[]> = {}
-            weightTiersData?.forEach(wt => {
-                if (!tiersMap[wt.product_id]) tiersMap[wt.product_id] = []
-                tiersMap[wt.product_id].push({
-                    weight_grams: wt.weight_grams,
-                    price: wt.price
-                })
-            })
-            setWeightTiers(tiersMap)
+    const handleSubmit = async () => {
+        if (!formData.name || !formData.category_id || !formData.price_per_kg) {
+            alert('Please fill in all required fields');
+            return;
         }
 
-        setIsLoading(false)
-    }
+        setLoading(true);
+        try {
+            let productId = product?.id;
+
+            if (product) {
+                const { error: updateError } = await supabase
+                    .from('products')
+                    .update({
+                        name: formData.name,
+                        description: formData.description,
+                        category_id: formData.category_id,
+                        image_url: formData.image_url,
+                        base_unit: formData.base_unit,
+                        pricing_type: formData.pricing_type,
+                        is_active: formData.is_active
+                    })
+                    .eq('id', product.id);
+
+                if (updateError) throw updateError;
+            } else {
+                const { data: newProduct, error: insertError } = await supabase
+                    .from('products')
+                    .insert({
+                        name: formData.name,
+                        description: formData.description,
+                        category_id: formData.category_id,
+                        image_url: formData.image_url,
+                        base_unit: formData.base_unit,
+                        pricing_type: formData.pricing_type,
+                        is_active: formData.is_active
+                    })
+                    .select()
+                    .single();
+
+                if (insertError) throw insertError;
+                productId = newProduct.id;
+            }
+
+            const { error: priceError } = await supabase
+                .from('daily_prices')
+                .insert({
+                    product_id: productId,
+                    price_per_kg: parseFloat(formData.price_per_kg),
+                    effective_date: new Date().toISOString().split('T')[0]
+                });
+
+            if (priceError) throw priceError;
+
+            alert(product ? 'Product updated successfully!' : 'Product created successfully!');
+            onSave();
+            onClose();
+        } catch (error) {
+            console.error('Error saving product:', error);
+            alert('Failed to save product');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    if (!isOpen) return null;
+
+    return (
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+                <div className="p-6 border-b border-gray-200 flex items-center justify-between sticky top-0 bg-white z-10">
+                    <h2 className="text-xl font-bold text-gray-900">
+                        {product ? 'Edit Product' : 'Add New Product'}
+                    </h2>
+                    <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-lg">
+                        <X className="w-5 h-5" />
+                    </button>
+                </div>
+
+                <div className="p-6 space-y-6">
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                            Product Name <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                            type="text"
+                            name="name"
+                            value={formData.name}
+                            onChange={handleChange}
+                            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
+                            placeholder="e.g., Fresh Tomatoes"
+                        />
+                    </div>
+
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                            Category <span className="text-red-500">*</span>
+                        </label>
+                        <select
+                            name="category_id"
+                            value={formData.category_id}
+                            onChange={handleChange}
+                            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
+                        >
+                            <option value="">Select a category</option>
+                            {categories.map(cat => (
+                                <option key={cat.id} value={cat.id}>{cat.name}</option>
+                            ))}
+                        </select>
+                    </div>
+
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                            Description
+                        </label>
+                        <textarea
+                            name="description"
+                            value={formData.description}
+                            onChange={handleChange}
+                            rows={3}
+                            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 resize-none"
+                            placeholder="Describe your product..."
+                        />
+                    </div>
+
+                    <div>
+                        <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-2">
+                            {/*<DollarSign className="w-4 h-4" />*/}
+                            Price per KG <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                            type="number"
+                            name="price_per_kg"
+                            value={formData.price_per_kg}
+                            onChange={handleChange}
+                            step="0.01"
+                            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
+                            placeholder="0.00"
+                        />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">Base Unit</label>
+                            <select
+                                name="base_unit"
+                                value={formData.base_unit}
+                                onChange={handleChange}
+                                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
+                            >
+                                <option value="kg">Kilogram (kg)</option>
+                                {/*<option value="g">Gram (g)</option>*/}
+                            </select>
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">Pricing Type</label>
+                            <select
+                                name="pricing_type"
+                                value={formData.pricing_type}
+                                onChange={handleChange}
+                                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
+                            >
+                                <option value="daily">Daily Price</option>
+                                <option value="fixed">Fixed Price</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div>
+                        <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-2">
+                            <Upload className="w-4 h-4" />
+                            Image URL
+                        </label>
+                        <input
+                            type="url"
+                            name="image_url"
+                            value={formData.image_url}
+                            onChange={handleChange}
+                            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
+                            placeholder="https://example.com/image.jpg"
+                        />
+                    </div>
+
+                    <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+                        <div>
+                            <p className="font-medium text-gray-900">Product Status</p>
+                            <p className="text-sm text-gray-500">
+                                {formData.is_active ? 'Visible to customers' : 'Hidden'}
+                            </p>
+                        </div>
+                        <label className="flex items-center gap-3 cursor-pointer">
+                            <span className="text-sm font-medium text-gray-700">Active</span>
+                            <div className="relative">
+                                <input
+                                    type="checkbox"
+                                    name="is_active"
+                                    checked={formData.is_active}
+                                    onChange={handleChange}
+                                    className="sr-only peer"
+                                />
+                                <div className="w-14 h-8 bg-gray-300 rounded-full peer peer-checked:bg-green-600"></div>
+                                <div className="absolute left-1 top-1 w-6 h-6 bg-white rounded-full transition-transform peer-checked:translate-x-6"></div>
+                            </div>
+                        </label>
+                    </div>
+                </div>
+
+                <div className="p-6 border-t flex gap-3 justify-end bg-gray-50">
+                    <button
+                        onClick={onClose}
+                        className="px-6 py-3 border border-gray-300 rounded-lg hover:bg-gray-100"
+                        disabled={loading}
+                    >
+                        Cancel
+                    </button>
+                    <button
+                        onClick={handleSubmit}
+                        disabled={loading}
+                        className="px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center gap-2 disabled:opacity-50"
+                    >
+                        {loading ? (
+                            <>
+                                <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                                Saving...
+                            </>
+                        ) : (
+                            <>
+                                <Save className="w-5 h-5" />
+                                {product ? 'Update' : 'Create'}
+                            </>
+                        )}
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+// Main Products Component
+const ProductsManagement = () => {
+    const [searchQuery, setSearchQuery] = useState('');
+    const [selectedCategory, setSelectedCategory] = useState('all');
+    const [loading, setLoading] = useState(true);
+    const [products, setProducts] = useState([]);
+    const [categories, setCategories] = useState([]);
+    const [showModal, setShowModal] = useState(false);
+    const [selectedProduct, setSelectedProduct] = useState(null);
+
+    useEffect(() => {
+        fetchData();
+    }, []);
+
+    const fetchData = async () => {
+        setLoading(true);
+        try {
+            await Promise.all([fetchProducts(), fetchCategories()]);
+        } catch (error) {
+            console.error('Error fetching data:', error);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const fetchProducts = async () => {
+        const { data, error } = await supabase
+            .from('products')
+            .select(`
+                id,
+                name,
+                description,
+                image_url,
+                category,
+                is_active,
+                pricing_type,
+                base_unit,
+                category_id,
+                product_categories!products_category_id_fkey (name),
+                daily_prices (price_per_kg, effective_date)
+            `)
+            .order('created_at', { ascending: false });
+
+        if (error) {
+            console.error('Error fetching products:', error);
+            return;
+        }
+
+        const formattedProducts = data.map(product => {
+            const latestPrice = product.daily_prices
+                ?.sort((a, b) => new Date(b.effective_date) - new Date(a.effective_date))[0];
+
+            return {
+                id: product.id,
+                name: product.name,
+                description: product.description,
+                category: product.product_categories?.name || product.category || 'Uncategorized',
+                category_id: product.category_id,
+                price: latestPrice?.price_per_kg || 0,
+                unit: product.base_unit,
+                status: product.is_active ? 'active' : 'inactive',
+                is_active: product.is_active,
+                image: product.image_url,
+                image_url: product.image_url,
+                base_unit: product.base_unit,
+                pricing_type: product.pricing_type
+            };
+        });
+
+        setProducts(formattedProducts);
+    };
 
     const fetchCategories = async () => {
         const { data, error } = await supabase
             .from('product_categories')
-            .select('id, name, slug')
+            .select('name')
             .eq('is_active', true)
-            .order('display_order')
+            .order('display_order', { ascending: true });
 
         if (error) {
-            console.error('Error fetching categories:', error)
-            return
+            console.error('Error fetching categories:', error);
+            return;
         }
 
-        setCategories(data || [])
-    }
+        setCategories(['All', ...(data?.map(c => c.name) || [])]);
+    };
 
-    const handleAddProduct = async () => {
-        if (!newProduct.name.trim() || !newProduct.category_id) {
-            alert('Product name and category is required')
-            return
-        }
+    const handleToggleStatus = async (productId, currentStatus) => {
+        const { error } = await supabase
+            .from('products')
+            .update({ is_active: !currentStatus })
+            .eq('id', productId);
 
-        try {
-            const { error } = await supabase
-                .from('products')
-                .insert({
-                    name: newProduct.name,
-                    description: newProduct.description || null,
-                    category_id: newProduct.category_id,
-                    pricing_type: newProduct.pricing_type,
-                    is_active: true
-                })
+        if (!error) fetchProducts();
+    };
 
-            if (error) throw error
-
-            alert('Product added successfully!')
-            setShowAddProduct(false)
-            setNewProduct({
-                name: '',
-                description: '',
-                category_id: '',
-                pricing_type: 'daily'
-            })
-
-            fetchProducts()
-        } catch (error: any) {
-            console.error('Error adding product:', error)
-            alert('Failed to add product: ' + error.message)
-        }
-    }
-
-    const handleUpdatePrice = async (productId: string) => {
-        const product = products.find(p => p.id === productId)
-        if (!product) return
-
-        try {
-            if (product.pricing_type === 'daily') {
-                const newPrice = priceUpdates[productId]?.price_per_kg
-                if (!newPrice || isNaN(parseFloat(newPrice))) {
-                    alert('Please enter a valid price')
-                    return
-                }
-
-                await supabase
-                    .from('daily_prices')
-                    .delete()
-                    .eq('product_id', productId)
-                    .eq('effective_date', today)
-
-                const { error } = await supabase
-                    .from('daily_prices')
-                    .insert({
-                        product_id: productId,
-                        price_per_kg: parseFloat(newPrice),
-                        effective_date: today
-                    })
-
-                if (error) throw error
-            } else {
-                const tiers = priceUpdates[productId]?.tiers || []
-
-                if (tiers.length === 0) {
-                    alert('Please add at least one weight tier')
-                    return
-                }
-
-                for (const tier of tiers) {
-                    if (!tier.weight_grams || !tier.price || isNaN(parseInt(tier.weight_grams)) || isNaN(parseFloat(tier.price))) {
-                        alert('Please enter valid weight and price for all tiers')
-                        return
-                    }
-                }
-
-                await supabase
-                    .from('weight_tiers')
-                    .delete()
-                    .eq('product_id', productId)
-                    .eq('effective_date', today)
-
-                const tierInserts = tiers.map((t: any) => ({
-                    product_id: productId,
-                    weight_grams: parseInt(t.weight_grams),
-                    price: parseFloat(t.price),
-                    effective_date: today
-                }))
-
-                const { error } = await supabase
-                    .from('weight_tiers')
-                    .insert(tierInserts)
-
-                if (error) throw error
-            }
-
-            setEditingProduct(null)
-            setPriceUpdates({})
-            fetchProducts()
-            alert('Price updated successfully!')
-        } catch (error: any) {
-            console.error('Error updating price:', error)
-            alert('Failed to update price: ' + error.message)
-        }
-    }
-
-    const handleDeleteProduct = async (productId: string) => {
-        if (!confirm('Are you sure you want to delete this product? This will also delete all associated prices.')) {
-            return
-        }
-
-        try {
+    const handleDelete = async (productId) => {
+        if (confirm('Are you sure you want to delete this product?')) {
             const { error } = await supabase
                 .from('products')
                 .delete()
-                .eq('id', productId)
+                .eq('id', productId);
 
-            if (error) throw error
-
-            alert('Product deleted successfully!')
-            fetchProducts()
-        } catch (error: any) {
-            console.error('Error deleting product:', error)
-            alert('Failed to delete product: ' + error.message)
+            if (!error) fetchProducts();
         }
-    }
+    };
 
-    const handleAddTier = (productId: string) => {
-        const current = priceUpdates[productId]?.tiers || []
-        setPriceUpdates({
-            ...priceUpdates,
-            [productId]: {
-                ...priceUpdates[productId],
-                tiers: [...current, { weight_grams: '', price: '' }]
-            }
-        })
-    }
+    const handleEdit = (product) => {
+        setSelectedProduct(product);
+        setShowModal(true);
+    };
 
-    const handleRemoveTier = (productId: string, index: number) => {
-        const current = priceUpdates[productId]?.tiers || []
-        setPriceUpdates({
-            ...priceUpdates,
-            [productId]: {
-                ...priceUpdates[productId],
-                tiers: current.filter((_: any, i: number) => i !== index)
-            }
-        })
-    }
+    const handleAdd = () => {
+        setSelectedProduct(null);
+        setShowModal(true);
+    };
 
-    // Pagination logic
-    const indexOfLastRecord = currentPage * recordsPerPage
-    const indexOfFirstRecord = indexOfLastRecord - recordsPerPage
-    const currentRecords = products.slice(indexOfFirstRecord, indexOfLastRecord)
-    const totalPages = Math.ceil(products.length / recordsPerPage)
+    const filteredProducts = products.filter(product => {
+        const matchesSearch = product.name.toLowerCase().includes(searchQuery.toLowerCase());
+        const matchesCategory = selectedCategory === 'all' || product.category.toLowerCase() === selectedCategory.toLowerCase();
+        return matchesSearch && matchesCategory;
+    });
 
-    if (isLoading) {
+    const activeCount = products.filter(p => p.status === 'active').length;
+    const inactiveCount = products.filter(p => p.status === 'inactive').length;
+
+    if (loading) {
         return (
-            <div className="flex items-center justify-center h-64">
-                <p className="text-gray-500">Loading products...</p>
+            <div className="flex items-center justify-center min-h-screen">
+                <div className="w-12 h-12 border-4 border-green-600 border-t-transparent rounded-full animate-spin"></div>
             </div>
-        )
+        );
     }
 
     return (
-        <div className="max-w-7xl mx-auto">
-            {/* Header */}
-            <div className="flex items-center justify-between mb-6">
+        <div className="space-y-6">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                 <div>
-                    <h1 className="text-2xl font-bold text-gray-900">Products</h1>
-                    <p className="text-gray-600 mt-1">Manage products and prices for {today}</p>
+                    <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Products</h1>
+                    <p className="text-sm text-gray-500 mt-1">Manage your product inventory</p>
                 </div>
                 <button
-                    onClick={() => setShowAddProduct(true)}
-                    className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 flex items-center gap-2"
+                    onClick={handleAdd}
+                    className="bg-green-600 hover:bg-green-700 text-white px-4 py-2.5 rounded-lg font-medium flex items-center justify-center gap-2 transition-colors shadow-sm"
                 >
                     <Plus className="w-5 h-5" />
-                    Add Product
+                    <span>Add Product</span>
                 </button>
             </div>
 
-            {/* Add Product Modal */}
-            {showAddProduct && (
-                <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
-                    <div className="bg-white rounded-xl max-w-md w-full p-6">
-                        <h2 className="text-xl font-bold text-gray-900 mb-4">Add New Product</h2>
+            <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
+                <div className="flex flex-col lg:flex-row gap-4">
+                    <div className="flex-1 relative">
+                        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+                        <input
+                            type="text"
+                            placeholder="Search products..."
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                            className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
+                        />
+                    </div>
+                    <select
+                        value={selectedCategory}
+                        onChange={(e) => setSelectedCategory(e.target.value)}
+                        className="px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 bg-white min-w-[150px]"
+                    >
+                        {categories.map((cat) => (
+                            <option key={cat} value={cat.toLowerCase()}>{cat}</option>
+                        ))}
+                    </select>
+                </div>
+            </div>
 
-                        <div className="space-y-4">
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-2">
-                                    Product Name *
-                                </label>
-                                <input
-                                    type="text"
-                                    value={newProduct.name}
-                                    onChange={(e) => setNewProduct({ ...newProduct, name: e.target.value })}
-                                    className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-green-500"
-                                    placeholder="e.g., Tomato"
-                                />
-                            </div>
-
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-2">
-                                    Description
-                                </label>
-                                <textarea
-                                    value={newProduct.description}
-                                    onChange={(e) => setNewProduct({ ...newProduct, description: e.target.value })}
-                                    className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-green-500"
-                                    rows={3}
-                                    placeholder="Fresh farm tomatoes..."
-                                />
-                            </div>
-
-                            {/*<div>*/}
-                            {/*    <label className="block text-sm font-medium text-gray-700 mb-2">*/}
-                            {/*        Category*/}
-                            {/*    </label>*/}
-                            {/*    <input*/}
-                            {/*        type="text"*/}
-                            {/*        value={newProduct.category}*/}
-                            {/*        onChange={(e) => setNewProduct({ ...newProduct, category: e.target.value })}*/}
-                            {/*        className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-green-500"*/}
-                            {/*        placeholder="Vegetables"*/}
-                            {/*    />*/}
-                            {/*</div>*/}
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-2">
-                                    Category *
-                                </label>
-                                <select
-                                    value={newProduct.category_id}
-                                    onChange={(e) =>
-                                        setNewProduct({ ...newProduct, category_id: e.target.value })
-                                    }
-                                    className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-green-500"
-                                >
-                                    <option value="">Select category</option>
-                                    {categories.map((cat) => (
-                                        <option key={cat.id} value={cat.id}>
-                                            {cat.name}
-                                        </option>
-                                    ))}
-                                </select>
-                            </div>
-
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-2">
-                                    Pricing Type *
-                                </label>
-                                <select
-                                    value={newProduct.pricing_type}
-                                    onChange={(e) => setNewProduct({ ...newProduct, pricing_type: e.target.value as 'daily' | 'tiered' })}
-                                    className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-green-500"
-                                >
-                                    <option value="daily">Daily Pricing (per kg)</option>
-                                    <option value="tiered">Tiered Pricing (by weight)</option>
-                                </select>
-                            </div>
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="bg-white rounded-lg p-4 border border-gray-100">
+                    <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
+                            <Package className="w-5 h-5 text-blue-600" />
                         </div>
-
-                        <div className="flex gap-3 mt-6">
-                            <button
-                                onClick={handleAddProduct}
-                                className="flex-1 bg-green-600 text-white py-2 rounded-lg hover:bg-green-700"
-                            >
-                                Add Product
-                            </button>
-                            <button
-                                onClick={() => {
-                                    setShowAddProduct(false)
-                                    setNewProduct({
-                                        name: '',
-                                        description: '',
-                                        category: 'Vegetables',
-                                        pricing_type: 'daily'
-                                    })
-                                }}
-                                className="flex-1 bg-gray-200 text-gray-700 py-2 rounded-lg hover:bg-gray-300"
-                            >
-                                Cancel
-                            </button>
+                        <div>
+                            <p className="text-sm text-gray-600">Total</p>
+                            <p className="text-xl font-bold text-gray-900">{products.length}</p>
                         </div>
                     </div>
                 </div>
-            )}
+                <div className="bg-white rounded-lg p-4 border border-gray-100">
+                    <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
+                            <Eye className="w-5 h-5 text-green-600" />
+                        </div>
+                        <div>
+                            <p className="text-sm text-gray-600">Active</p>
+                            <p className="text-xl font-bold text-gray-900">{activeCount}</p>
+                        </div>
+                    </div>
+                </div>
+                <div className="bg-white rounded-lg p-4 border border-gray-100">
+                    <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 bg-red-100 rounded-lg flex items-center justify-center">
+                            <EyeOff className="w-5 h-5 text-red-600" />
+                        </div>
+                        <div>
+                            <p className="text-sm text-gray-600">Inactive</p>
+                            <p className="text-xl font-bold text-gray-900">{inactiveCount}</p>
+                        </div>
+                    </div>
+                </div>
+                <div className="bg-white rounded-lg p-4 border border-gray-100">
+                    <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 bg-yellow-100 rounded-lg flex items-center justify-center">
+                            <DollarSign className="w-5 h-5 text-yellow-600" />
+                        </div>
+                        <div>
+                            <p className="text-sm text-gray-600">Categories</p>
+                            <p className="text-xl font-bold text-gray-900">{categories.length - 1}</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
 
-            {/* Products Table */}
-            <div className="overflow-x-auto bg-white rounded-xl shadow-sm border border-gray-200">
-                <table className="min-w-full divide-y divide-gray-200">
-                    <thead className="bg-gray-50">
+            <div className="hidden lg:block bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+                <table className="w-full">
+                    <thead className="bg-gray-50 border-b">
                     <tr>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            Product
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            Pricing Type
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            Price
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            Actions
-                        </th>
+                        <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase">Product</th>
+                        <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase">Category</th>
+                        <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase">Price</th>
+                        <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase">Status</th>
+                        <th className="px-6 py-4 text-right text-xs font-semibold text-gray-600 uppercase">Actions</th>
                     </tr>
                     </thead>
-
-                    <tbody className="bg-white divide-y divide-gray-200">
-                    {currentRecords.map((product) => (
-                        <tr key={product.id}>
-                            <td className="px-6 py-4 whitespace-nowrap">
-                                <div className="text-sm font-medium text-gray-900">{product.name}</div>
-                                <div className="text-xs text-gray-500">{product.category}</div>
-                                <div className="text-xs text-gray-400">{product.description}</div>
-                            </td>
-
-                            <td className="px-6 py-4 whitespace-nowrap">
-                                    <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                                        product.pricing_type === 'daily'
-                                            ? 'bg-blue-100 text-blue-800'
-                                            : 'bg-purple-100 text-purple-800'
-                                    }`}>
-                                        {product.pricing_type === 'daily' ? 'Daily' : 'Tiered'}
-                                    </span>
-
-                                {!product.is_active && (
-                                    <div className="text-xs mt-1 text-red-600">Inactive</div>
-                                )}
-                            </td>
-
-                            <td className="px-6 py-4 whitespace-nowrap">
-                                {product.pricing_type === 'daily' ? (
-                                    editingProduct === product.id ? (
-                                        <input
-                                            type="number"
-                                            step="0.01"
-                                            value={priceUpdates[product.id]?.price_per_kg || ''}
-                                            onChange={(e) => setPriceUpdates({
-                                                ...priceUpdates,
-                                                [product.id]: { price_per_kg: e.target.value }
-                                            })}
-                                            className="w-40 px-3 py-2 border rounded-lg"
-                                        />
-                                    ) : (
-                                        <span className="text-sm font-semibold text-green-600">
-                                                Rs. {dailyPrices[product.id]?.price_per_kg?.toFixed(2) || 'Not set'}
-                                            </span>
-                                    )
-                                ) : (
-                                    editingProduct === product.id ? (
-                                        <div className="space-y-2">
-                                            {(priceUpdates[product.id]?.tiers || []).map((tier: any, index: number) => (
-                                                <div key={index} className="flex items-center gap-2">
-                                                    <input
-                                                        type="number"
-                                                        value={tier.weight_grams}
-                                                        onChange={(e) => {
-                                                            const newTiers = [...priceUpdates[product.id].tiers]
-                                                            newTiers[index].weight_grams = e.target.value
-                                                            setPriceUpdates({
-                                                                ...priceUpdates,
-                                                                [product.id]: { tiers: newTiers }
-                                                            })
-                                                        }}
-                                                        placeholder="Grams"
-                                                        className="w-24 px-2 py-1 border rounded-lg"
-                                                    />
-                                                    <span>=</span>
-                                                    <input
-                                                        type="number"
-                                                        step="0.01"
-                                                        value={tier.price}
-                                                        onChange={(e) => {
-                                                            const newTiers = [...priceUpdates[product.id].tiers]
-                                                            newTiers[index].price = e.target.value
-                                                            setPriceUpdates({
-                                                                ...priceUpdates,
-                                                                [product.id]: { tiers: newTiers }
-                                                            })
-                                                        }}
-                                                        placeholder="Price"
-                                                        className="w-24 px-2 py-1 border rounded-lg"
-                                                    />
-                                                    <button onClick={() => handleRemoveTier(product.id, index)}>
-                                                        <Trash2 className="w-4 h-4 text-red-600" />
-                                                    </button>
-                                                </div>
-                                            ))}
-                                            <button
-                                                onClick={() => handleAddTier(product.id)}
-                                                className="text-sm bg-blue-600 text-white px-3 py-1 rounded mt-2"
-                                            >
-                                                <Plus className="w-4 h-4 inline-block" /> Add Tier
-                                            </button>
-                                        </div>
-                                    ) : (
-                                        <div className="space-y-1">
-                                            {(weightTiers[product.id] || []).sort((a, b) => a.weight_grams - b.weight_grams).map((tier, idx) => (
-                                                <div key={idx} className="text-sm">
-                                                    {tier.weight_grams} g = <span className="font-semibold text-green-600">Rs. {tier.price.toFixed(2)}</span>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    )
-                                )}
-                            </td>
-
-                            <td className="px-6 py-4 whitespace-nowrap">
-                                {editingProduct === product.id ? (
-                                    <div className="flex gap-2">
-                                        <button
-                                            onClick={() => handleUpdatePrice(product.id)}
-                                            className="bg-green-600 text-white px-3 py-2 rounded-lg hover:bg-green-700 flex items-center gap-2"
-                                        >
-                                            <Save className="w-4 h-4" />
-                                            Save
-                                        </button>
-                                        <button
-                                            onClick={() => {
-                                                setEditingProduct(null)
-                                                setPriceUpdates({})
-                                            }}
-                                            className="bg-gray-200 text-gray-700 px-3 py-2 rounded-lg hover:bg-gray-300 flex items-center gap-2"
-                                        >
-                                            <X className="w-4 h-4" />
-                                            Cancel
-                                        </button>
+                    <tbody className="divide-y divide-gray-200">
+                    {filteredProducts.map((product) => (
+                        <tr key={product.id} className="hover:bg-gray-50">
+                            <td className="px-6 py-4">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center overflow-hidden">
+                                        {product.image ? (
+                                            <img src={product.image} alt={product.name} className="w-full h-full object-cover" />
+                                        ) : (
+                                            <Package className="w-5 h-5 text-gray-400" />
+                                        )}
                                     </div>
-                                ) : (
-                                    <div className="flex gap-2">
-                                        <button
-                                            onClick={() => {
-                                                setEditingProduct(product.id)
-                                                if (product.pricing_type === 'daily') {
-                                                    setPriceUpdates({
-                                                        ...priceUpdates,
-                                                        [product.id]: {
-                                                            price_per_kg: dailyPrices[product.id]?.price_per_kg || ''
-                                                        }
-                                                    })
-                                                } else {
-                                                    setPriceUpdates({
-                                                        ...priceUpdates,
-                                                        [product.id]: {
-                                                            tiers: (weightTiers[product.id] || []).map(t => ({
-                                                                weight_grams: t.weight_grams,
-                                                                price: t.price
-                                                            }))
-                                                        }
-                                                    })
-                                                }
-                                            }}
-                                            className="bg-blue-600 text-white px-3 py-2 rounded-lg hover:bg-blue-700 flex items-center gap-2"
-                                        >
-                                            <Edit className="w-4 h-4" />
-                                            Edit
-                                        </button>
-                                        <button
-                                            onClick={() => handleDeleteProduct(product.id)}
-                                            className="bg-red-600 text-white px-3 py-2 rounded-lg hover:bg-red-700 flex items-center gap-2"
-                                        >
-                                            <Trash2 className="w-4 h-4" />
-                                            Delete
-                                        </button>
+                                    <div>
+                                        <p className="font-medium text-gray-900">{product.name}</p>
+                                        <p className="text-sm text-gray-500">{product.description?.substring(0, 30)}...</p>
                                     </div>
-                                )}
+                                </div>
+                            </td>
+                            <td className="px-6 py-4">
+                                <span className="text-sm text-gray-700">{product.category}</span>
+                            </td>
+                            <td className="px-6 py-4">
+                                <p className="font-semibold text-gray-900">PKR {product.price}</p>
+                                <p className="text-sm text-gray-500">per {product.unit}</p>
+                            </td>
+                            <td className="px-6 py-4">
+                                <button
+                                    onClick={() => handleToggleStatus(product.id, product.status === 'active')}
+                                    className={`px-3 py-1 rounded-full text-xs font-medium Rs.{
+                                        product.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
+                                    }`}
+                                >
+                                    {product.status === 'active' ? 'Active' : 'Inactive'}
+                                </button>
+                            </td>
+                            <td className="px-6 py-4">
+                                <div className="flex items-center justify-end gap-2">
+                                    <button
+                                        onClick={() => handleEdit(product)}
+                                        className="p-2 hover:bg-gray-100 rounded-lg"
+                                    >
+                                        <Edit2 className="w-4 h-4 text-gray-600" />
+                                    </button>
+                                    <button
+                                        onClick={() => handleDelete(product.id)}
+                                        className="p-2 hover:bg-red-50 rounded-lg"
+                                    >
+                                        <Trash2 className="w-4 h-4 text-red-600" />
+                                    </button>
+                                </div>
                             </td>
                         </tr>
                     ))}
@@ -591,30 +629,67 @@ export default function AdminProductsPage() {
                 </table>
             </div>
 
-            {/* Pagination */}
-            <div className="flex justify-between items-center mt-4">
-                <button
-                    onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
-                    disabled={currentPage === 1}
-                    className="flex items-center gap-2 bg-gray-200 px-4 py-2 rounded hover:bg-gray-300 disabled:opacity-50"
-                >
-                    <ChevronLeft className="w-4 h-4" />
-                    Previous
-                </button>
-
-                <span className="text-sm text-gray-600">
-                    Page {currentPage} of {totalPages}
-                </span>
-
-                <button
-                    onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
-                    disabled={currentPage === totalPages}
-                    className="flex items-center gap-2 bg-gray-200 px-4 py-2 rounded hover:bg-gray-300 disabled:opacity-50"
-                >
-                    Next
-                    <ChevronRight className="w-4 h-4" />
-                </button>
+            <div className="lg:hidden space-y-4">
+                {filteredProducts.map((product) => (
+                    <div key={product.id} className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
+                        <div className="flex items-start gap-3">
+                            <div className="w-16 h-16 bg-gray-100 rounded-lg flex items-center justify-center overflow-hidden flex-shrink-0">
+                                {product.image ? (
+                                    <img src={product.image} alt={product.name} className="w-full h-full object-cover" />
+                                ) : (
+                                    <Package className="w-8 h-8 text-gray-400" />
+                                )}
+                            </div>
+                            <div className="flex-1">
+                                <h3 className="font-semibold text-gray-900">{product.name}</h3>
+                                <p className="text-sm text-gray-500 mt-0.5">{product.category}</p>
+                                <div className="flex items-center gap-2 mt-3">
+                                    <span
+                                        onClick={() => handleToggleStatus(product.id, product.status === 'active')}
+                                        className={`px-2 py-1 rounded-full text-xs font-medium cursor-pointer Rs.{
+                                            product.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
+                                        }`}
+                                    >
+                                        {product.status === 'active' ? 'Active' : 'Inactive'}
+                                    </span>
+                                </div>
+                                <div className="flex items-center justify-between mt-3 pt-3 border-t">
+                                    <div>
+                                        <p className="text-lg font-bold text-gray-900">PKR {product.price}</p>
+                                        <p className="text-xs text-gray-500">per {product.unit}</p>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <button
+                                            onClick={() => handleEdit(product)}
+                                            className="p-2 hover:bg-gray-100 rounded-lg"
+                                        >
+                                            <Edit2 className="w-4 h-4 text-gray-600" />
+                                        </button>
+                                        <button
+                                            onClick={() => handleDelete(product.id)}
+                                            className="p-2 hover:bg-red-50 rounded-lg"
+                                        >
+                                            <Trash2 className="w-4 h-4 text-red-600" />
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                ))}
             </div>
+
+            <ProductModal
+                isOpen={showModal}
+                onClose={() => {
+                    setShowModal(false);
+                    setSelectedProduct(null);
+                }}
+                product={selectedProduct}
+                onSave={fetchData}
+            />
         </div>
-    )
-}
+    );
+};
+
+export default ProductsManagement;

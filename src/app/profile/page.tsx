@@ -4,7 +4,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { User, Package, LogOut, Loader2, Mail, Phone, MapPin, Calendar, Shield } from 'lucide-react'
+import { User, Package, LogOut, Loader2, Mail, Phone, Shield, Bike } from 'lucide-react'
 import { OrderStatusBadge } from '@/components/orders/OrderTracker'
 import Link from 'next/link'
 
@@ -38,7 +38,6 @@ export default function ProfilePage() {
         setIsLoading(true)
 
         try {
-            // Get user
             const { data: { user }, error: userError } = await supabase.auth.getUser()
 
             if (userError || !user) {
@@ -48,7 +47,6 @@ export default function ProfilePage() {
 
             setUser(user)
 
-            // Get profile
             const { data: profileData } = await supabase
                 .from('profiles')
                 .select('*')
@@ -57,7 +55,6 @@ export default function ProfilePage() {
 
             setProfile(profileData)
 
-            // Get orders
             const { data: ordersData } = await supabase
                 .from('orders')
                 .select(`
@@ -136,9 +133,22 @@ export default function ProfilePage() {
                                 <p className="text-sm text-gray-600 mt-1">
                                     {user?.email}
                                 </p>
+                                {/* Role Badge */}
+                                {profile?.role && (
+                                    <span className={`inline-block mt-2 px-3 py-1 rounded-full text-xs font-medium ${
+                                        profile.role === 'admin'
+                                            ? 'bg-purple-100 text-purple-800'
+                                            : profile.role === 'rider'
+                                                ? 'bg-blue-100 text-blue-800'
+                                                : 'bg-gray-100 text-gray-800'
+                                    }`}>
+                                        {profile.role === 'admin' ? '👑 Admin' :
+                                            profile.role === 'rider' ? '🚴 Rider' :
+                                                '👤 Customer'}
+                                    </span>
+                                )}
                             </div>
 
-                            {/* Navigation */}
                             {/* Navigation */}
                             <nav className="space-y-2">
                                 <button
@@ -170,7 +180,7 @@ export default function ProfilePage() {
                                     href="/admin/dashboard"
                                     className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
                                         profile?.role === 'admin'
-                                            ? 'bg-green-50 text-blue-700 font-medium hover:bg-blue-100'
+                                            ? 'bg-purple-50 text-purple-700 font-medium hover:bg-purple-100'
                                             : 'text-gray-400 bg-gray-100 cursor-not-allowed'
                                     }`}
                                     aria-disabled={profile?.role !== 'admin'}
@@ -181,9 +191,24 @@ export default function ProfilePage() {
                                     <Shield className="w-5 h-5" />
                                     Admin Panel
                                 </Link>
+
+                                {/* Rider Dashboard */}
+                                <Link
+                                    href="/rider/dashboard"
+                                    className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
+                                        profile?.role === 'rider'
+                                            ? 'bg-blue-50 text-blue-700 font-medium hover:bg-blue-100'
+                                            : 'text-gray-400 bg-gray-100 cursor-not-allowed'
+                                    }`}
+                                    aria-disabled={profile?.role !== 'rider'}
+                                    onClick={(e) => {
+                                        if (profile?.role !== 'rider') e.preventDefault()
+                                    }}
+                                >
+                                    <Bike className="w-5 h-5" />
+                                    Rider Dashboard
+                                </Link>
                             </nav>
-
-
                         </div>
                     </div>
 
@@ -234,7 +259,6 @@ export default function ProfilePage() {
 
                                                 {order.delivery_slot && (
                                                     <div className="flex items-center gap-2 text-sm text-gray-600 mb-4 pb-4 border-b">
-                                                        <Calendar className="w-4 h-4" />
                                                         <span>
                                                             Delivery: {formatDate(order.delivery_slot.slot_date)} at{' '}
                                                             {new Date(`2000-01-01T${order.delivery_slot.start_time}`).toLocaleTimeString('en-IN', {

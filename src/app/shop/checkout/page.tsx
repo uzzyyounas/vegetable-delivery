@@ -3,7 +3,7 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Leaf, ArrowLeft } from 'lucide-react'
+import { Leaf, ArrowLeft, Wallet, Banknote } from 'lucide-react'
 import CheckoutForm from '@/components/checkout/CheckoutForm'
 import { createClient } from '@/lib/supabase/client'
 import { CartItem, CheckoutData } from '@/lib/types/database.types'
@@ -13,17 +13,16 @@ export default function CheckoutPage() {
     const [cart, setCart] = useState<CartItem[]>([])
     const [isLoading, setIsLoading] = useState(true)
     const [user, setUser] = useState<any>(null)
+    const [paymentMethod, setPaymentMethod] = useState<'cod' | 'online'>('cod')
     const router = useRouter()
     const supabase = createClient()
 
     useEffect(() => {
-        // Load cart from localStorage
         const savedCart = localStorage.getItem('cart')
         if (savedCart) {
             setCart(JSON.parse(savedCart))
         }
 
-        // Check if user is logged in
         supabase.auth.getUser().then(({ data }) => {
             setUser(data.user)
             setIsLoading(false)
@@ -65,10 +64,14 @@ export default function CheckoutPage() {
                 guestCustomerId = guestData.id
             }
 
+            // Generate unique order number
+            const orderNumber = `ORD-${Date.now()}-${Math.random().toString(36).substr(2, 9).toUpperCase()}`
+
             // Create order
             const { data: order, error: orderError } = await supabase
                 .from('orders')
                 .insert({
+                    order_number: orderNumber,
                     user_id: user?.id || null,
                     guest_customer_id: guestCustomerId,
                     delivery_slot_id: checkoutData.delivery_slot_id,
@@ -79,7 +82,8 @@ export default function CheckoutPage() {
                     total_amount: totalAmount,
                     notes: checkoutData.notes,
                     status: 'pending',
-                    payment_status: 'pending'
+                    payment_status: paymentMethod === 'cod' ? 'cod' : 'pending',
+                    payment_method: paymentMethod
                 })
                 .select()
                 .single()
@@ -109,7 +113,7 @@ export default function CheckoutPage() {
                 .insert({
                     order_id: order.id,
                     status: 'pending',
-                    notes: 'Order placed successfully'
+                    notes: `Order placed successfully - Payment: ${paymentMethod === 'cod' ? 'Cash on Delivery' : 'Online Payment'}`
                 })
 
             // Update delivery slot count
@@ -121,7 +125,7 @@ export default function CheckoutPage() {
             localStorage.removeItem('cart')
 
             // Redirect to order confirmation
-            router.push(`/orders/${order.id}`)
+            router.push(`/track-order/${order.id}`)
         } catch (error) {
             console.error('Checkout error:', error)
             alert('Failed to place order. Please try again.')
@@ -159,7 +163,6 @@ export default function CheckoutPage() {
 
     return (
         <div className="min-h-screen bg-gray-50">
-            {/* Header */}
             <header className="bg-white shadow-sm">
                 <div className="max-w-7xl mx-auto px-4 py-4">
                     <div className="flex items-center gap-4">
@@ -192,10 +195,52 @@ export default function CheckoutPage() {
                                             </p>
                                         </div>
                                         <span className="font-medium text-gray-900">
-                      Rs.{(item.price * item.quantity).toFixed(2)}
-                    </span>
+                                            Rs.{(item.price * item.quantity).toFixed(2)}
+                                        </span>
                                     </div>
                                 ))}
+                            </div>
+
+                            {/* Payment Method Selection */}
+                            <div className="border-t border-gray-200 pt-4 mb-4">
+                                <h4 className="font-medium text-gray-900 mb-3">Payment Method</h4>
+                                <div className="space-y-2">
+                                    <label className={`flex items-center gap-3 p-3 border-2 rounded-lg cursor-pointer transition-all ${
+                                        paymentMethod === 'cod' ? 'border-green-500 bg-green-50' : 'border-gray-200 hover:border-gray-300'
+                                    }`}>
+                                        <input
+                                            type="radio"
+                                            name="payment"
+                                            value="cod"
+                                            checked={paymentMethod === 'cod'}
+                                            onChange={(e) => setPaymentMethod('cod')}
+                                            className="w-4 h-4 text-green-600"
+                                        />
+                                        <Banknote className="w-5 h-5 text-gray-600" />
+                                        <div className="flex-1">
+                                            <p className="font-medium text-gray-900">Cash on Delivery</p>
+                                            <p className="text-xs text-gray-500">Pay when you receive</p>
+                                        </div>
+                                    </label>
+
+                                    <label className={`flex items-center gap-3 p-3 border-2 rounded-lg cursor-pointer transition-all ${
+                                        paymentMethod === 'online' ? 'border-green-500 bg-green-50' : 'border-gray-200 hover:border-gray-300'
+                                    }`}>
+                                        <input
+                                            type="radio"
+                                            name="payment"
+                                            value="online"
+                                            checked={paymentMethod === 'online'}
+                                            onChange={(e) => setPaymentMethod('online')}
+                                            className="w-4 h-4 text-green-600"
+                                        />
+                                        <Wallet className="w-5 h-5 text-gray-600" />
+                                        <div className="flex-1">
+                                            <p className="font-medium text-gray-900">Online Payment</p>
+                                            <p className="text-xs text-gray-500">Coming Soon</p>
+                                        </div>
+                                    </label>
+                                </div>
                             </div>
 
                             <div className="border-t border-gray-200 pt-4">
@@ -211,9 +256,14 @@ export default function CheckoutPage() {
                                     <div className="flex justify-between items-center">
                                         <span className="font-semibold text-gray-900">Total</span>
                                         <span className="text-xl font-bold text-green-600">
-                      Rs.{totalAmount.toFixed(2)}
-                    </span>
+                                            Rs.{totalAmount.toFixed(2)}
+                                        </span>
                                     </div>
+                                    {paymentMethod === 'cod' && (
+                                        <p className="text-xs text-gray-500 mt-2">
+                                            💵 Pay cash to the delivery rider
+                                        </p>
+                                    )}
                                 </div>
                             </div>
                         </div>
@@ -233,15 +283,3 @@ export default function CheckoutPage() {
         </div>
     )
 }
-
-// SQL Function for incrementing slot orders (Add to migration)
-/*
-CREATE OR REPLACE FUNCTION increment_slot_orders(slot_id UUID)
-RETURNS void AS $$
-BEGIN
-  UPDATE delivery_slots
-  SET current_orders = current_orders + 1
-  WHERE id = slot_id;
-END;
-$$ LANGUAGE plpgsql;
-*/
