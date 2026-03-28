@@ -48,6 +48,8 @@ const OrdersManagement = () => {
             .select('id, full_name, phone')
             .eq('role', 'rider');
 
+        console.log('riderId', data);
+
         setRiders(data || []);
     };
 
@@ -161,33 +163,12 @@ const OrdersManagement = () => {
         await fetchOrderDetails(order.id);
     };
 
-    const debugAuth = async () => {
-        const { data: { user }, error } = await supabase.auth.getUser()
-
-        console.log('AUTH USER:', user)
-        console.log('AUTH UID:', user?.id)
-        console.log('AUTH ERROR:', error)
-    }
-
     const handleUpdateStatus = async (orderId, newStatus) => {
-        await debugAuth()
-        await supabase.auth.getSession().then(
-            value => {
-                console.log(value)
-            }
-        )
-
-        console.log('ORDER ID:', orderId)
-        console.log('NEW STATUS:', newStatus)
 
         const {data,error } = await supabase
             .from('orders')
             .update({ status: newStatus })
             .eq('id', orderId);
-
-        console.log('updated rows', data);
-        console.log('error', error);
-
 
         if (!error) {
             console.log('123');

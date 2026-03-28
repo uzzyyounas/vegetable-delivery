@@ -132,7 +132,7 @@ export default async function OrderDetailsPage({ params }: { params: { id: strin
                     <div className="space-y-6">
                         {/* Delivery Details */}
                         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-                            <h3 className="font-semibold text-gray-900 mb-4">Delivery Details</h3>
+                            <h3 className="font-semibold text-gray-900 mb-4">Delivery Details -t</h3>
 
                             <div className="space-y-4">
                                 {order.delivery_slot && (

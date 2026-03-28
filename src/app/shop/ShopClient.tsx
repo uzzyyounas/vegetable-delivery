@@ -46,8 +46,11 @@ export default function ShopClient({ products }: ShopClientProps) {
             await loadUserCart(currentUser.id)
         } else {
             setUser(null)
-            setCart([])
-            localStorage.removeItem('vegetable_cart')
+            // Load guest cart from localStorage
+            const guestCart = localStorage.getItem('guest_cart')
+            if (guestCart) {
+                setCart(JSON.parse(guestCart))
+            }
         }
     }
 
@@ -85,9 +88,14 @@ export default function ShopClient({ products }: ShopClientProps) {
     }
 
     const saveCartToDatabase = async (updatedCart: CartItem[]) => {
-        if (!user) return
+        if (!user) {
+            // Save to localStorage for guests
+            localStorage.setItem('guest_cart', JSON.stringify(updatedCart))
+            return
+        }
 
         try {
+            // Get or create user cart
             let { data: userCart } = await supabase
                 .from('user_carts')
                 .select('id')
@@ -108,8 +116,10 @@ export default function ShopClient({ products }: ShopClientProps) {
                 cartId = userCart.id
             }
 
+            // Clear existing cart items
             await supabase.from('cart_items').delete().eq('cart_id', cartId)
 
+            // Insert new cart items
             if (updatedCart.length > 0) {
                 const cartItemsData = updatedCart.map(item => ({
                     cart_id: cartId,
@@ -126,9 +136,7 @@ export default function ShopClient({ products }: ShopClientProps) {
     }
 
     useEffect(() => {
-        if (user) {
-            saveCartToDatabase(cart)
-        }
+        saveCartToDatabase(cart)
     }, [cart, user])
 
     const fetchCategories = async () => {
@@ -137,8 +145,6 @@ export default function ShopClient({ products }: ShopClientProps) {
             .select('id, name, slug, description')
             .eq('is_active', true)
             .order('display_order')
-
-        console.log('data',data);
 
         if (data) setCategories(data)
     }
@@ -359,12 +365,6 @@ export default function ShopClient({ products }: ShopClientProps) {
                     <>
                         {/* Categories */}
                         <div className="mb-6 sm:mb-8 bg-white rounded-xl sm:rounded-2xl shadow-lg border border-gray-100 p-4 sm:p-6">
-                            {/*<h3 className="font-bold text-gray-900 mb-4 flex items-center gap-2 text-base sm:text-lg">*/}
-                            {/*    <div className="w-8 h-8 bg-gradient-to-br from-green-400 to-emerald-500 rounded-lg flex items-center justify-center">*/}
-                            {/*        <Leaf className="w-4 h-4 text-white" />*/}
-                            {/*    </div>*/}
-                            {/*    Shop by Category*/}
-                            {/*</h3>*/}
                             <div className="flex flex-wrap gap-2 sm:gap-3">
                                 <button
                                     onClick={() => setSelectedCategory('all')}

@@ -115,6 +115,7 @@ export default function RiderDashboardPage() {
         const today = new Date().toISOString().split('T')[0]
 
         console.log('riderId',riderId);
+        console.log('today',today);
 
         const { data: todayOrders } = await supabase
             .from('orders')
