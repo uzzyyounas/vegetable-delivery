@@ -1,125 +1,116 @@
 // src/app/checkout/page.tsx
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { Leaf, ArrowLeft, Loader2 } from 'lucide-react'
 import CheckoutForm from '@/components/checkout/CheckoutForm'
 import { createClient } from '@/lib/supabase/client'
-import { CartItem, CheckoutData } from '@/lib/types/database.types'
+import { CheckoutData } from '@/lib/types/database.types'
 import Link from 'next/link'
+import { User } from '@supabase/supabase-js'
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+interface CartProduct {
+    id: string
+    name: string
+}
+
+interface CartItem {
+    id: string
+    quantity: number
+    weight_grams: number
+    price: number
+    product_id: string
+    products: CartProduct
+}
+
+interface Cart {
+    id: string
+    user_id: string
+    items: CartItem[]
+}
+
+// ─── Component ────────────────────────────────────────────────────────────────
 
 export default function CheckoutPage() {
-    const [cart, setCart] = useState<CartItem[]>([])
+    const [cart, setCart]           = useState<Cart | null>(null)
     const [isLoading, setIsLoading] = useState(true)
-    const [user, setUser] = useState<any>(null)
-    const router = useRouter()
+    const [user, setUser]           = useState<User | null>(null)
+    const router  = useRouter()
     const supabase = createClient()
 
-    useEffect(() => {
-        // Load cart from localStorag
-        // const savedCart = localStorage.getItem('vegetable_cart')
-        // if (savedCart) {
-        //     try {
-        //         const parsedCart = JSON.parse(savedCart)
-        //         setCart(parsedCart)
-        //     } catch (error) {
-        //         console.error('Error parsing cart:', error)
-        //         setCart([])
-        //     }
-        // }
-
-        const fetchCartFromSupabase = async () => {
-            try {
-                // 1. Get logged-in user
-                const { data } = await supabase.auth.getUser();
-                const user = data.user;
-
-                setUser(user);
-                setIsLoading(false);
-
-                // If no user, empty cart
-                if (!user) {
-                    setCart([]);
-                    return;
-                }
-
-                // 2. Get user cart
-                const { data: cartData, error: cartError } = await supabase
-                    .from('user_carts')
-                    .select('*')
-                    .eq('user_id', user.id)
-                    .single();
-
-                if (cartError) {
-                    console.error("Error fetching cart:", cartError);
-                    setCart([]);
-                    return;
-                }
-
-                // 3. Get cart items
-                const { data: itemsData, error: itemsError } = await supabase
-                    .from('cart_items')
-                    .select(`id, quantity,weight_grams,price, product_id, products (id,  name )`)
-                    .eq('cart_id', cartData.id);
-                console.log("cart item data: ", itemsData);
-
-                if (itemsError) {
-                    console.error("Error fetching cart items:", itemsError);
-                    setCart([]);
-                    return;
-                }
-
-                // 4. Combine and set cart
-                const finalCart = {
-                    ...cartData,
-                    items: itemsData || [],
-                };
-
-                setCart(finalCart);
-
-            } catch (error) {
-                console.error("Error fetching cart from supabase:", error);
-                setCart([]);
-                setIsLoading(false);
-            }
-        }
-
-        fetchCartFromSupabase();
-        // Check if user is logged in
-        supabase.auth.getUser().then(({ data }) => {
-            setUser(data.user)
+    const fetchCartFromSupabase = useCallback(async () => {
+        try {
+            // 1. Get logged-in user
+            const { data } = await supabase.auth.getUser()
+            const currentUser = data.user
+            setUser(currentUser)
             setIsLoading(false)
-        })
-    }, [])
 
-    const totalAmount = cart?.items?.reduce((sum, item) => sum + item.price * item.quantity, 0)
+            if (!currentUser) {
+                setCart(null)
+                return
+            }
+
+            // 2. Get user cart
+            const { data: cartData, error: cartError } = await supabase
+                .from('user_carts')
+                .select('*')
+                .eq('user_id', currentUser.id)
+                .single()
+
+            if (cartError) {
+                console.error('Error fetching cart:', cartError)
+                setCart(null)
+                return
+            }
+
+            // 3. Get cart items
+            const { data: itemsData, error: itemsError } = await supabase
+                .from('cart_items')
+                .select('id, quantity, weight_grams, price, product_id, products (id, name)')
+                .eq('cart_id', cartData.id)
+
+            if (itemsError) {
+                console.error('Error fetching cart items:', itemsError)
+                setCart(null)
+                return
+            }
+
+            // 4. Combine and set cart
+            setCart({
+                ...cartData,
+                items: (itemsData as unknown as CartItem[]) || [],
+            })
+        } catch (error) {
+            console.error('Error fetching cart from supabase:', error)
+            setCart(null)
+            setIsLoading(false)
+        }
+    }, [supabase])
+
+    useEffect(() => {
+        fetchCartFromSupabase()
+    }, [fetchCartFromSupabase])
+
+    const totalAmount = cart?.items?.reduce(
+        (sum: number, item: CartItem) => sum + item.price * item.quantity,
+        0
+    ) ?? 0
 
     const handleCheckout = async (checkoutData: CheckoutData) => {
-
         try {
-            // Validate service zone
-            // const { data: zone, error: zoneError } = await supabase
-            //     .from('service_zones')
-            //     .select('*')
-            //     .eq('pin_code', checkoutData.pin_code)
-            //     .eq('is_active', true)
-            //     .single()
-            //
-            // if (zoneError || !zone) {
-            //     alert('We do not deliver to this pin code yet. Please contact support.')
-            //     return
-            // }
-
-            let guestCustomerId = null
+            let guestCustomerId: string | null = null
 
             // Create guest customer if not logged in
             if (!user) {
                 const { data: guestData, error: guestError } = await supabase
                     .from('guest_customers')
                     .insert({
-                        email: checkoutData.email,
-                        phone: checkoutData.phone,
+                        email:     checkoutData.email,
+                        phone:     checkoutData.phone,
                         full_name: checkoutData.full_name
                     })
                     .select()
@@ -129,48 +120,49 @@ export default function CheckoutPage() {
                     console.error('Guest customer error:', guestError)
                     throw new Error('Failed to create customer profile')
                 }
-                guestCustomerId = guestData.id
+                guestCustomerId = (guestData as { id: string }).id
             }
 
             // Create order
             const { data: order, error: orderError } = await supabase
                 .from('orders')
                 .insert({
-                    user_id: user?.id || null,
+                    user_id:           user?.id || null,
                     guest_customer_id: guestCustomerId,
-                    delivery_slot_id: checkoutData.delivery_slot_id,
-                    delivery_address: checkoutData.delivery_address,
-                    pin_code: checkoutData.pin_code,
-                    phone: checkoutData.phone,
-                    email: checkoutData.email,
-                    total_amount: totalAmount,
-                    notes: checkoutData.notes || null,
-                    status: 'pending',
-                    payment_status: 'pending'
+                    delivery_slot_id:  checkoutData.delivery_slot_id,
+                    delivery_address:  checkoutData.delivery_address,
+                    pin_code:          checkoutData.pin_code,
+                    phone:             checkoutData.phone,
+                    email:             checkoutData.email,
+                    total_amount:      totalAmount,
+                    notes:             checkoutData.notes || null,
+                    status:            'pending',
+                    payment_status:    'pending'
                 })
                 .select()
                 .single()
 
             if (orderError) {
-                console.error('Order creation error - ss:', {
+                console.error('Order creation error:', {
                     message: orderError?.message,
                     details: orderError?.details,
-                    hint: orderError?.hint,
-                    code: orderError?.code
+                    hint:    orderError?.hint,
+                    code:    orderError?.code
                 })
-                // console.error('Order creation error:', orderError)
-                throw new Error('Failed to create order -ss')
+                throw new Error('Failed to create order')
             }
 
+            const createdOrder = order as { id: string; order_number: string }
+
             // Create order items
-            const orderItems = cart?.items?.map(item => ({
-                order_id: order.id,
-                product_id: item.products.id,
+            const orderItems = cart?.items?.map((item: CartItem) => ({
+                order_id:     createdOrder.id,
+                product_id:   item.products.id,
                 product_name: item.products.name,
                 weight_grams: item.weight_grams,
-                unit_price: item.price,
-                quantity: item.quantity,
-                subtotal: item.price * item.quantity
+                unit_price:   item.price,
+                quantity:     item.quantity,
+                subtotal:     item.price * item.quantity
             }))
 
             const { error: itemsError } = await supabase
@@ -183,27 +175,24 @@ export default function CheckoutPage() {
             }
 
             // Create initial status history
-            await supabase
-                .from('order_status_history')
-                .insert({
-                    order_id: order.id,
-                    status: 'pending',
-                    notes: 'Order placed successfully'
-                })
+            await supabase.from('order_status_history').insert({
+                order_id: createdOrder.id,
+                status:   'pending',
+                notes:    'Order placed successfully'
+            })
 
             // Update delivery slot count
             await supabase.rpc('increment_slot_orders', {
                 slot_id: checkoutData.delivery_slot_id
             })
 
-            // Clear cart
+            // Clear cart & redirect
             localStorage.removeItem('vegetable_cart')
-
-            // Redirect to success page
-            router.push(`/order-success?order=${order.order_number}&id=${order.id}`)
-        } catch (error: any) {
+            router.push(`/order-success?order=${createdOrder.order_number}&id=${createdOrder.id}`)
+        } catch (error: unknown) {
             console.error('Checkout error:', error)
-            alert('Failed to place order: ' + (error.message || 'Please try again'))
+            const message = error instanceof Error ? error.message : 'Please try again'
+            alert('Failed to place order: ' + message)
         }
     }
 
@@ -218,7 +207,7 @@ export default function CheckoutPage() {
         )
     }
 
-    if (cart.length === 0) {
+    if (!cart || cart.items.length === 0) {
         return (
             <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
                 <div className="text-center max-w-md">
@@ -262,18 +251,20 @@ export default function CheckoutPage() {
                             <h3 className="font-semibold text-gray-900 mb-4">Order Summary</h3>
 
                             <div className="space-y-3 mb-4 max-h-96 overflow-y-auto">
-                                {cart?.items?.map((item, index) => (
+                                {cart.items.map((item: CartItem, index: number) => (
                                     <div key={index} className="flex justify-between text-sm pb-3 border-b last:border-0">
                                         <div className="flex-1 pr-4">
                                             <p className="font-medium text-gray-900">{item.products.name}</p>
                                             <p className="text-gray-500">
-                                                {item.weight_grams >= 1000 ? `${item.weight_grams / 1000} kg` : `${item.weight_grams} g`}
-                                                {' '} × {item.quantity}
+                                                {item.weight_grams >= 1000
+                                                    ? `${item.weight_grams / 1000} kg`
+                                                    : `${item.weight_grams} g`}
+                                                {' '}× {item.quantity}
                                             </p>
                                         </div>
                                         <span className="font-medium text-gray-900 whitespace-nowrap">
-                      Rs.{(item.price * item.quantity).toFixed(2)}
-                    </span>
+                                            Rs.{(item.price * item.quantity).toFixed(2)}
+                                        </span>
                                     </div>
                                 ))}
                             </div>
@@ -291,8 +282,8 @@ export default function CheckoutPage() {
                                     <div className="flex justify-between items-center">
                                         <span className="font-semibold text-gray-900">Total</span>
                                         <span className="text-2xl font-bold text-green-600">
-                      Rs.{totalAmount.toFixed(2)}
-                    </span>
+                                            Rs.{totalAmount.toFixed(2)}
+                                        </span>
                                     </div>
                                 </div>
                             </div>
@@ -319,15 +310,3 @@ export default function CheckoutPage() {
         </div>
     )
 }
-
-// SQL Function to add (if not exists)
-/*
-CREATE OR REPLACE FUNCTION increment_slot_orders(slot_id UUID)
-RETURNS void AS $$
-BEGIN
-  UPDATE delivery_slots
-  SET current_orders = current_orders + 1
-  WHERE id = slot_id;
-END;
-$$ LANGUAGE plpgsql;
-*/
