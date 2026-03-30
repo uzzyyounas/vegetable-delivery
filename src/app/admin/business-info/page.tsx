@@ -74,7 +74,8 @@ const BusinessSettings = () => {
         }
     };
 
-    const handleChange = (e) => {
+    // const handleChange = (e) => {
+    const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const { name, value, type, checked } = e.target;
         setFormData(prev => ({
             ...prev,
