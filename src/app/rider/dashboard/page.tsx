@@ -1,7 +1,7 @@
 // src/app/rider/dashboard/page.tsx
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import {
     Package,
@@ -10,22 +10,31 @@ import {
     Clock,
     CheckCircle,
     Navigation,
+    User,
     Bike,
     AlertCircle,
     Star,
-    User
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 
-// ─── Types ────────────────────────────────────────────────────────────────────
-
+// Types
 interface DeliverySlot {
     slot_date: string
     start_time: string
     end_time: string
 }
 
-interface RiderOrder {
+interface Profile {
+    full_name: string
+    phone: string
+}
+
+interface GuestCustomer {
+    full_name: string
+    phone: string
+}
+
+interface Order {
     id: string
     order_number: string
     total_amount: string
@@ -42,8 +51,29 @@ interface RiderOrder {
     customer_rating: number | null
     customer_feedback: string | null
     delivery_slots: DeliverySlot | null
-    profiles: { full_name: string; phone: string } | null
-    guest_customers: { full_name: string; phone: string } | null
+    profiles: Profile | null
+    guest_customers: GuestCustomer | null
+}
+
+interface RawOrder {
+    id: string
+    order_number: string
+    total_amount: string
+    status: string
+    payment_method: string
+    payment_status: string
+    delivery_address: string
+    pin_code: string
+    phone: string
+    notes: string | null
+    created_at: string
+    rider_picked_at: string | null
+    rider_delivered_at: string | null
+    customer_rating: number | null
+    customer_feedback: string | null
+    delivery_slots: DeliverySlot[] | DeliverySlot | null
+    profiles: Profile[] | Profile | null
+    guest_customers: GuestCustomer[] | GuestCustomer | null
 }
 
 interface TodayOrder {
@@ -64,159 +94,205 @@ interface FeedbackData {
     paymentCollected: boolean
 }
 
-// ─── Component ────────────────────────────────────────────────────────────────
-
 export default function RiderDashboardPage() {
-    const [riderId, setRiderId]                   = useState<string | null>(null)
-    const [loading, setLoading]                   = useState(true)
-    const [activeTab, setActiveTab]               = useState('assigned')
-    const [orders, setOrders]                     = useState<RiderOrder[]>([])
-    const [stats, setStats]                       = useState<Stats>({
+    const [riderId, setRiderId] = useState<string | null>(null)
+    const [loading, setLoading] = useState(true)
+    const [activeTab, setActiveTab] = useState('assigned')
+    const [orders, setOrders] = useState<Order[]>([])
+    const [stats, setStats] = useState<Stats>({
         today: { delivered: 0, earnings: 0, collected: 0 },
         pending: 0,
         inProgress: 0
     })
-    const [showFeedbackModal, setShowFeedbackModal]             = useState(false)
-    const [selectedOrderForFeedback, setSelectedOrderForFeedback] = useState<RiderOrder | null>(null)
-    const [feedbackData, setFeedbackData]         = useState<FeedbackData>({
+    const [showFeedbackModal, setShowFeedbackModal] = useState(false)
+    const [selectedOrderForFeedback, setSelectedOrderForFeedback] = useState<Order | null>(null)
+    const [feedbackData, setFeedbackData] = useState<FeedbackData>({
         rating: 5,
         feedback: '',
         paymentCollected: false
     })
 
-    const router   = useRouter()
+    const router = useRouter()
     const supabase = createClient()
 
-    // ── Fetch helpers ────────────────────────────────────────────────────────
+    // Helper function to normalize orders
+    const normalizeOrder = (rawOrder: RawOrder): Order => ({
+        ...rawOrder,
+        delivery_slots: Array.isArray(rawOrder.delivery_slots)
+            ? (rawOrder.delivery_slots[0] ?? null)
+            : rawOrder.delivery_slots,
+        profiles: Array.isArray(rawOrder.profiles)
+            ? (rawOrder.profiles[0] ?? null)
+            : rawOrder.profiles,
+        guest_customers: Array.isArray(rawOrder.guest_customers)
+            ? (rawOrder.guest_customers[0] ?? null)
+            : rawOrder.guest_customers,
+    })
 
-    const fetchOrders = useCallback(async (currentRiderId: string) => {
-        let query = supabase
-            .from('orders')
-            .select(`
-                id,
-                order_number,
-                total_amount,
-                status,
-                payment_method,
-                payment_status,
-                delivery_address,
-                pin_code,
-                phone,
-                notes,
-                created_at,
-                rider_picked_at,
-                rider_delivered_at,
-                customer_rating,
-                customer_feedback,
-                delivery_slots:delivery_slot_id (slot_date, start_time, end_time),
-                profiles:user_id (full_name, phone),
-                guest_customers:guest_customer_id (full_name, phone)
-            `)
-            .eq('rider_id', currentRiderId)
-            .order('created_at', { ascending: false })
-
-        if (activeTab === 'assigned') {
-            query = query.eq('status', 'out_for_delivery')
-        } else if (activeTab === 'completed') {
-            query = query.eq('status', 'delivered')
-        }
-
-        const { data } = await query
-
-        // Normalise Supabase array joins → single objects
-        const normalised: RiderOrder[] = ((data ?? []) as unknown as RiderOrder[]).map(o => ({
-            ...o,
-            delivery_slots:  Array.isArray(o.delivery_slots)  ? (o.delivery_slots[0]  ?? null) : o.delivery_slots,
-            profiles:        Array.isArray(o.profiles)        ? (o.profiles[0]        ?? null) : o.profiles,
-            guest_customers: Array.isArray(o.guest_customers) ? (o.guest_customers[0] ?? null) : o.guest_customers,
-        }))
-
-        setOrders(normalised)
-    }, [supabase, activeTab])
-
-    const fetchStats = useCallback(async (currentRiderId: string) => {
-        const today = new Date().toISOString().split('T')[0]
-
-        const { data: todayOrders } = await supabase
-            .from('orders')
-            .select('total_amount, payment_method, payment_status')
-            .eq('rider_id', currentRiderId)
-            .eq('status', 'delivered')
-            .gte('created_at', today)
-
-        const orders = (todayOrders as TodayOrder[]) ?? []
-        const todayEarnings  = orders.reduce((sum, o) => sum + parseFloat(o.total_amount), 0)
-        const todayCollected = orders
-            .filter(o => o.payment_method === 'cod' && o.payment_status === 'paid')
-            .reduce((sum, o) => sum + parseFloat(o.total_amount), 0)
-
-        const { count: inProgressCount } = await supabase
-            .from('orders')
-            .select('*', { count: 'exact', head: true })
-            .eq('rider_id', currentRiderId)
-            .eq('status', 'out_for_delivery')
-
-        setStats({
-            today: {
-                delivered: orders.length,
-                earnings:  todayEarnings,
-                collected: todayCollected
-            },
-            pending:    0,
-            inProgress: inProgressCount ?? 0
-        })
-    }, [supabase])
-
-    // ── Auth ─────────────────────────────────────────────────────────────────
-
-    const checkRiderAuth = useCallback(async (): Promise<string | null> => {
-        const { data: { user } } = await supabase.auth.getUser()
-        if (!user) { router.push('/login'); return null }
-
-        const { data: profile } = await supabase
-            .from('profiles')
-            .select('id, role')
-            .eq('id', user.id)
-            .single()
-
-        if ((profile as { role: string } | null)?.role !== 'rider') {
-            alert('Access denied. This page is for riders only.')
-            router.push('/')
-            return null
-        }
-        return user.id   // ← return instead of setState
-    }, [supabase, router])
-
-    useEffect(() => { checkRiderAuth() }, [checkRiderAuth])
-
+    // Check authentication
     useEffect(() => {
-        checkRiderAuth().then(id => {
-            if (id) {
-                setRiderId(id)   // ✅ setState called in effect, not inside callback
-                setLoading(false)
-            }
-        })
-    }, [checkRiderAuth])
+        const checkRiderAuth = async () => {
+            const { data: { user } } = await supabase.auth.getUser()
 
-    // ── Handlers ─────────────────────────────────────────────────────────────
+            if (!user) {
+                router.push('/login')
+                return
+            }
+
+            const { data: profile } = await supabase
+                .from('profiles')
+                .select('id, role')
+                .eq('id', user.id)
+                .single()
+
+            if (profile?.role !== 'rider') {
+                alert('Access denied. This page is for riders only.')
+                router.push('/')
+                return
+            }
+
+            setRiderId(user.id)
+            setLoading(false)
+        }
+
+        checkRiderAuth()
+    }, [router, supabase])
+
+    // Fetch orders when riderId or activeTab changes
+    useEffect(() => {
+        if (riderId) {
+            const fetchOrders = async () => {
+                let query = supabase
+                    .from('orders')
+                    .select(`
+                        id,
+                        order_number,
+                        total_amount,
+                        status,
+                        payment_method,
+                        payment_status,
+                        delivery_address,
+                        pin_code,
+                        phone,
+                        notes,
+                        created_at,
+                        rider_picked_at,
+                        rider_delivered_at,
+                        customer_rating,
+                        customer_feedback,
+                        delivery_slots:delivery_slot_id (slot_date, start_time, end_time),
+                        profiles:user_id (full_name, phone),
+                        guest_customers:guest_customer_id (full_name, phone)
+                    `)
+                    .eq('rider_id', riderId)
+                    .order('created_at', { ascending: false })
+
+                if (activeTab === 'assigned') {
+                    query = query.eq('status', 'out_for_delivery')
+                } else if (activeTab === 'completed') {
+                    query = query.eq('status', 'delivered')
+                }
+
+                const { data } = await query
+
+                if (data) {
+                    const normalised: Order[] = (data as RawOrder[]).map(normalizeOrder)
+                    setOrders(normalised)
+                }
+            }
+
+            fetchOrders()
+        }
+    }, [riderId, activeTab, supabase])
+
+    // Fetch stats when riderId changes
+    useEffect(() => {
+        if (riderId) {
+            const fetchStats = async () => {
+                const today = new Date().toISOString().split('T')[0]
+
+                const { data: todayOrders } = await supabase
+                    .from('orders')
+                    .select('total_amount, payment_method, payment_status')
+                    .eq('rider_id', riderId)
+                    .eq('status', 'delivered')
+                    .gte('created_at', today)
+
+                const todayEarnings = (todayOrders as TodayOrder[] || []).reduce((sum, o) => sum + parseFloat(o.total_amount), 0)
+                const todayCollected = (todayOrders as TodayOrder[] || [])
+                    .filter(o => o.payment_method === 'cod' && o.payment_status === 'paid')
+                    .reduce((sum, o) => sum + parseFloat(o.total_amount), 0)
+
+                const { count: inProgressCount } = await supabase
+                    .from('orders')
+                    .select('*', { count: 'exact', head: true })
+                    .eq('rider_id', riderId)
+                    .eq('status', 'out_for_delivery')
+
+                setStats({
+                    today: {
+                        delivered: (todayOrders as TodayOrder[] || []).length,
+                        earnings: todayEarnings,
+                        collected: todayCollected
+                    },
+                    pending: 0,
+                    inProgress: inProgressCount || 0
+                })
+            }
+
+            fetchStats()
+        }
+    }, [riderId, supabase])
 
     const handlePickup = async (orderId: string) => {
         const { error } = await supabase
             .from('orders')
-            .update({ rider_picked_at: new Date().toISOString() })
+            .update({
+                rider_picked_at: new Date().toISOString()
+            })
             .eq('id', orderId)
 
         if (!error && riderId) {
-            fetchOrders(riderId)
+            // Refresh orders
+            const { data } = await supabase
+                .from('orders')
+                .select(`
+                    id,
+                    order_number,
+                    total_amount,
+                    status,
+                    payment_method,
+                    payment_status,
+                    delivery_address,
+                    pin_code,
+                    phone,
+                    notes,
+                    created_at,
+                    rider_picked_at,
+                    rider_delivered_at,
+                    customer_rating,
+                    customer_feedback,
+                    delivery_slots:delivery_slot_id (slot_date, start_time, end_time),
+                    profiles:user_id (full_name, phone),
+                    guest_customers:guest_customer_id (full_name, phone)
+                `)
+                .eq('rider_id', riderId)
+                .eq('status', 'out_for_delivery')
+                .order('created_at', { ascending: false })
+
+            if (data) {
+                const normalised: Order[] = (data as RawOrder[]).map(normalizeOrder)
+                setOrders(normalised)
+            }
             alert('Order marked as picked up!')
         }
     }
 
-    const handleOpenFeedbackModal = (order: RiderOrder) => {
+    const handleOpenFeedbackModal = (order: Order) => {
         setSelectedOrderForFeedback(order)
         setFeedbackData({
-            rating:           5,
-            feedback:         '',
+            rating: 5,
+            feedback: '',
             paymentCollected: order.payment_method === 'cod'
         })
         setShowFeedbackModal(true)
@@ -235,53 +311,117 @@ export default function RiderDashboardPage() {
         const { error } = await supabase
             .from('orders')
             .update({
-                status:             'delivered',
-                payment_status:     feedbackData.paymentCollected ? 'paid' : 'pending',
+                status: 'delivered',
+                payment_status: feedbackData.paymentCollected ? 'paid' : 'pending',
                 rider_delivered_at: new Date().toISOString(),
-                customer_rating:    feedbackData.rating,
-                customer_feedback:  feedbackData.feedback
+                customer_rating: feedbackData.rating,
+                customer_feedback: feedbackData.feedback
             })
             .eq('id', selectedOrderForFeedback.id)
 
         if (!error) {
-            await supabase.from('order_status_history').insert({
-                order_id:   selectedOrderForFeedback.id,
-                status:     'delivered',
-                notes:      `Order delivered. Payment ${feedbackData.paymentCollected ? 'collected' : 'pending'}`,
-                created_by: riderId
+            await supabase
+                .from('order_status_history')
+                .insert({
+                    order_id: selectedOrderForFeedback.id,
+                    status: 'delivered',
+                    notes: `Order delivered successfully. Payment ${feedbackData.paymentCollected ? 'collected' : 'pending'}`,
+                    created_by: riderId
+                })
+
+            await supabase
+                .from('rider_earnings')
+                .insert({
+                    rider_id: riderId,
+                    order_id: selectedOrderForFeedback.id,
+                    amount: parseFloat(selectedOrderForFeedback.total_amount),
+                    payment_collected: feedbackData.paymentCollected
+                })
+
+            // Refresh orders
+            const { data } = await supabase
+                .from('orders')
+                .select(`
+                    id,
+                    order_number,
+                    total_amount,
+                    status,
+                    payment_method,
+                    payment_status,
+                    delivery_address,
+                    pin_code,
+                    phone,
+                    notes,
+                    created_at,
+                    rider_picked_at,
+                    rider_delivered_at,
+                    customer_rating,
+                    customer_feedback,
+                    delivery_slots:delivery_slot_id (slot_date, start_time, end_time),
+                    profiles:user_id (full_name, phone),
+                    guest_customers:guest_customer_id (full_name, phone)
+                `)
+                .eq('rider_id', riderId)
+                .eq('status', 'out_for_delivery')
+                .order('created_at', { ascending: false })
+
+            if (data) {
+                const normalised: Order[] = (data as RawOrder[]).map(normalizeOrder)
+                setOrders(normalised)
+            }
+
+            // Refresh stats
+            const today = new Date().toISOString().split('T')[0]
+            const { data: todayOrders } = await supabase
+                .from('orders')
+                .select('total_amount, payment_method, payment_status')
+                .eq('rider_id', riderId)
+                .eq('status', 'delivered')
+                .gte('created_at', today)
+
+            const todayEarnings = (todayOrders as TodayOrder[] || []).reduce((sum, o) => sum + parseFloat(o.total_amount), 0)
+            const todayCollected = (todayOrders as TodayOrder[] || [])
+                .filter(o => o.payment_method === 'cod' && o.payment_status === 'paid')
+                .reduce((sum, o) => sum + parseFloat(o.total_amount), 0)
+
+            const { count: inProgressCount } = await supabase
+                .from('orders')
+                .select('*', { count: 'exact', head: true })
+                .eq('rider_id', riderId)
+                .eq('status', 'out_for_delivery')
+
+            setStats({
+                today: {
+                    delivered: (todayOrders as TodayOrder[] || []).length,
+                    earnings: todayEarnings,
+                    collected: todayCollected
+                },
+                pending: 0,
+                inProgress: inProgressCount || 0
             })
 
-            await supabase.from('rider_earnings').insert({
-                rider_id:          riderId,
-                order_id:          selectedOrderForFeedback.id,
-                amount:            parseFloat(selectedOrderForFeedback.total_amount),
-                payment_collected: feedbackData.paymentCollected
-            })
-
-            fetchOrders(riderId)
-            fetchStats(riderId)
             setShowFeedbackModal(false)
             setSelectedOrderForFeedback(null)
             alert('Order marked as delivered!')
         }
     }
 
-    // ── Helpers ──────────────────────────────────────────────────────────────
+    const getCustomerName = (order: Order): string => {
+        return order.profiles?.full_name || order.guest_customers?.full_name || 'Customer'
+    }
 
-    const getCustomerName = (order: RiderOrder) =>
-        order.profiles?.full_name || order.guest_customers?.full_name || 'Customer'
-
-    const getCustomerPhone = (order: RiderOrder) =>
-        order.phone || order.profiles?.phone || order.guest_customers?.phone || ''
+    const getCustomerPhone = (order: Order): string => {
+        return order.phone || order.profiles?.phone || order.guest_customers?.phone || ''
+    }
 
     const formatTime = (timeStr: string | null | undefined): string => {
         if (!timeStr) return ''
         return new Date(`2000-01-01T${timeStr}`).toLocaleTimeString('en-US', {
-            hour: 'numeric', minute: '2-digit', hour12: true
+            hour: 'numeric',
+            minute: '2-digit',
+            hour12: true
         })
     }
-
-    // ── Render ───────────────────────────────────────────────────────────────
 
     if (loading) {
         return (
@@ -330,7 +470,9 @@ export default function RiderDashboardPage() {
                         <div className="flex items-center gap-2 mb-2">
                             <span className="text-sm text-gray-600">Collected</span>
                         </div>
-                        <p className="text-2xl font-bold text-green-600">PKR {stats.today.collected.toFixed(0)}</p>
+                        <p className="text-2xl font-bold text-green-600">
+                            PKR {stats.today.collected.toFixed(0)}
+                        </p>
                         <p className="text-xs text-gray-500">Cash Today</p>
                     </div>
 
@@ -339,7 +481,9 @@ export default function RiderDashboardPage() {
                             <Package className="w-5 h-5 text-blue-600" />
                             <span className="text-sm text-gray-600">Earnings</span>
                         </div>
-                        <p className="text-2xl font-bold text-blue-600">PKR {stats.today.earnings.toFixed(0)}</p>
+                        <p className="text-2xl font-bold text-blue-600">
+                            PKR {stats.today.earnings.toFixed(0)}
+                        </p>
                         <p className="text-xs text-gray-500">Total Today</p>
                     </div>
 
@@ -357,19 +501,26 @@ export default function RiderDashboardPage() {
             {/* Tabs */}
             <div className="bg-white border-y border-gray-200 sticky top-[73px] z-10">
                 <div className="flex">
-                    {['assigned', 'completed'].map(tab => (
-                        <button
-                            key={tab}
-                            onClick={() => setActiveTab(tab)}
-                            className={`flex-1 px-4 py-3 text-sm font-medium ${
-                                activeTab === tab
-                                    ? 'text-green-600 border-b-2 border-green-600'
-                                    : 'text-gray-600'
-                            }`}
-                        >
-                            {tab === 'assigned' ? `My Deliveries (${stats.inProgress})` : 'Completed'}
-                        </button>
-                    ))}
+                    <button
+                        onClick={() => setActiveTab('assigned')}
+                        className={`flex-1 px-4 py-3 text-sm font-medium ${
+                            activeTab === 'assigned'
+                                ? 'text-green-600 border-b-2 border-green-600'
+                                : 'text-gray-600'
+                        }`}
+                    >
+                        My Deliveries ({stats.inProgress})
+                    </button>
+                    <button
+                        onClick={() => setActiveTab('completed')}
+                        className={`flex-1 px-4 py-3 text-sm font-medium ${
+                            activeTab === 'completed'
+                                ? 'text-green-600 border-b-2 border-green-600'
+                                : 'text-gray-600'
+                        }`}
+                    >
+                        Completed
+                    </button>
                 </div>
             </div>
 
@@ -379,7 +530,8 @@ export default function RiderDashboardPage() {
                     <div className="bg-white rounded-xl p-8 text-center">
                         <Package className="w-16 h-16 text-gray-300 mx-auto mb-4" />
                         <p className="text-gray-600">
-                            {activeTab === 'assigned' ? 'No active deliveries' : 'No completed deliveries'}
+                            {activeTab === 'assigned' && 'No active deliveries'}
+                            {activeTab === 'completed' && 'No completed deliveries'}
                         </p>
                     </div>
                 ) : (
@@ -411,9 +563,8 @@ export default function RiderDashboardPage() {
                                     <div className="flex items-center gap-2 text-sm text-gray-600">
                                         <Clock className="w-4 h-4" />
                                         <span>
-                                            {new Date(order.delivery_slots.slot_date).toLocaleDateString()} •{' '}
-                                            {formatTime(order.delivery_slots.start_time)} -{' '}
-                                            {formatTime(order.delivery_slots.end_time)}
+                                            {new Date(order.delivery_slots.slot_date).toLocaleDateString()} •
+                                            {formatTime(order.delivery_slots.start_time)} - {formatTime(order.delivery_slots.end_time)}
                                         </span>
                                     </div>
                                 )}
@@ -458,14 +609,14 @@ export default function RiderDashboardPage() {
                                     </div>
                                 )}
 
-                                {activeTab === 'completed' && order.customer_rating != null && (
+                                {activeTab === 'completed' && order.customer_rating && (
                                     <div className="border-t pt-3 mt-3">
                                         <div className="flex items-center gap-2 mb-2">
                                             {[...Array(5)].map((_, i) => (
                                                 <Star
                                                     key={i}
                                                     className={`w-4 h-4 ${
-                                                        i < (order.customer_rating ?? 0)
+                                                        i < order.customer_rating!
                                                             ? 'text-yellow-400 fill-yellow-400'
                                                             : 'text-gray-300'
                                                     }`}
@@ -502,10 +653,10 @@ export default function RiderDashboardPage() {
                                     </div>
                                 )}
 
-                                {activeTab === 'completed' && order.rider_delivered_at && (
+                                {activeTab === 'completed' && (
                                     <div className="text-center text-sm text-gray-600">
                                         <CheckCircle className="w-6 h-6 text-green-600 mx-auto mb-1" />
-                                        <p>Delivered on {new Date(order.rider_delivered_at).toLocaleString()}</p>
+                                        <p>Delivered on {new Date(order.rider_delivered_at!).toLocaleString()}</p>
                                         <p className="text-xs text-gray-500 mt-1">
                                             Payment: {order.payment_status === 'paid' ? '✅ Collected' : '⏳ Pending'}
                                         </p>
@@ -537,14 +688,16 @@ export default function RiderDashboardPage() {
                                     {[1, 2, 3, 4, 5].map((rating) => (
                                         <button
                                             key={rating}
-                                            onClick={() => setFeedbackData(prev => ({ ...prev, rating }))}
+                                            onClick={() => setFeedbackData({ ...feedbackData, rating })}
                                             className="p-1"
                                         >
-                                            <Star className={`w-8 h-8 ${
-                                                rating <= feedbackData.rating
-                                                    ? 'text-yellow-400 fill-yellow-400'
-                                                    : 'text-gray-300'
-                                            }`} />
+                                            <Star
+                                                className={`w-8 h-8 ${
+                                                    rating <= feedbackData.rating
+                                                        ? 'text-yellow-400 fill-yellow-400'
+                                                        : 'text-gray-300'
+                                                }`}
+                                            />
                                         </button>
                                     ))}
                                 </div>
@@ -556,7 +709,7 @@ export default function RiderDashboardPage() {
                                 </label>
                                 <textarea
                                     value={feedbackData.feedback}
-                                    onChange={(e) => setFeedbackData(prev => ({ ...prev, feedback: e.target.value }))}
+                                    onChange={(e) => setFeedbackData({ ...feedbackData, feedback: e.target.value })}
                                     rows={3}
                                     className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 resize-none"
                                     placeholder="Any notes about the delivery..."
@@ -569,7 +722,7 @@ export default function RiderDashboardPage() {
                                         <input
                                             type="checkbox"
                                             checked={feedbackData.paymentCollected}
-                                            onChange={(e) => setFeedbackData(prev => ({ ...prev, paymentCollected: e.target.checked }))}
+                                            onChange={(e) => setFeedbackData({ ...feedbackData, paymentCollected: e.target.checked })}
                                             className="w-5 h-5 text-green-600 rounded"
                                         />
                                         <div>
@@ -585,7 +738,10 @@ export default function RiderDashboardPage() {
 
                         <div className="p-6 border-t flex gap-3">
                             <button
-                                onClick={() => { setShowFeedbackModal(false); setSelectedOrderForFeedback(null) }}
+                                onClick={() => {
+                                    setShowFeedbackModal(false)
+                                    setSelectedOrderForFeedback(null)
+                                }}
                                 className="flex-1 px-4 py-3 border border-gray-300 rounded-lg hover:bg-gray-50"
                             >
                                 Cancel
