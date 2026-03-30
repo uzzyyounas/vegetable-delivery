@@ -12,7 +12,6 @@ import {
     EyeOff,
     X,
     Save,
-    Search
 } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 
@@ -20,6 +19,8 @@ const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
+
+// ─── Types ────────────────────────────────────────────────────────────────────
 
 interface Slot {
     id: string;
@@ -31,6 +32,14 @@ interface Slot {
     isActive: boolean;
 }
 
+interface FormData {
+    slot_date: string;
+    start_time: string;
+    end_time: string;
+    max_orders: number;
+    is_active: boolean;
+}
+
 interface DeliverySlotModalProps {
     isOpen: boolean;
     onClose: () => void;
@@ -38,16 +47,16 @@ interface DeliverySlotModalProps {
     onSave: () => void;
 }
 
-// Delivery Slot Modal Component
-// const DeliverySlotModal = ({ isOpen, onClose, slot, onSave }) => {
+// ─── Modal Component ──────────────────────────────────────────────────────────
+
 const DeliverySlotModal = ({ isOpen, onClose, slot, onSave }: DeliverySlotModalProps) => {
     const [loading, setLoading] = useState(false);
-    const [formData, setFormData] = useState({
+    const [formData, setFormData] = useState<FormData>({
         slot_date: '',
         start_time: '',
         end_time: '',
         max_orders: 10,
-        is_active: true
+        is_active: true,
     });
 
     useEffect(() => {
@@ -58,29 +67,29 @@ const DeliverySlotModal = ({ isOpen, onClose, slot, onSave }: DeliverySlotModalP
                 resetForm();
             }
         }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [isOpen, slot]);
 
     const loadSlotData = () => {
-        if (!slot) return;  // Add this guard
+        if (!slot) return;
         setFormData({
             slot_date: slot.date || '',
             start_time: slot.startTime || '',
             end_time: slot.endTime || '',
             max_orders: slot.maxOrders || 10,
-            is_active: slot.isActive ?? true
+            is_active: slot.isActive ?? true,
         });
     };
 
     const resetForm = () => {
         const tomorrow = new Date();
         tomorrow.setDate(tomorrow.getDate() + 1);
-
         setFormData({
             slot_date: tomorrow.toISOString().split('T')[0],
             start_time: '10:00',
             end_time: '12:00',
             max_orders: 10,
-            is_active: true
+            is_active: true,
         });
     };
 
@@ -88,7 +97,7 @@ const DeliverySlotModal = ({ isOpen, onClose, slot, onSave }: DeliverySlotModalP
         const { name, value, type, checked } = e.target;
         setFormData(prev => ({
             ...prev,
-            [name]: type === 'checkbox' ? checked : value
+            [name]: type === 'checkbox' ? checked : type === 'number' ? Number(value) : value,
         }));
     };
 
@@ -97,7 +106,6 @@ const DeliverySlotModal = ({ isOpen, onClose, slot, onSave }: DeliverySlotModalP
             alert('Please fill in all required fields');
             return;
         }
-
         if (formData.start_time >= formData.end_time) {
             alert('End time must be after start time');
             return;
@@ -109,9 +117,9 @@ const DeliverySlotModal = ({ isOpen, onClose, slot, onSave }: DeliverySlotModalP
                 slot_date: formData.slot_date,
                 start_time: formData.start_time,
                 end_time: formData.end_time,
-                max_orders: parseInt(formData.max_orders),
+                max_orders: formData.max_orders,          // already a number
                 is_active: formData.is_active,
-                current_orders: slot?.currentOrders || 0
+                current_orders: slot?.currentOrders ?? 0,
             };
 
             if (slot) {
@@ -119,14 +127,12 @@ const DeliverySlotModal = ({ isOpen, onClose, slot, onSave }: DeliverySlotModalP
                     .from('delivery_slots')
                     .update(slotData)
                     .eq('id', slot.id);
-
                 if (error) throw error;
                 alert('Delivery slot updated successfully!');
             } else {
                 const { error } = await supabase
                     .from('delivery_slots')
                     .insert(slotData);
-
                 if (error) throw error;
                 alert('Delivery slot created successfully!');
             }
@@ -270,17 +276,19 @@ const DeliverySlotModal = ({ isOpen, onClose, slot, onSave }: DeliverySlotModalP
     );
 };
 
-// Main Delivery Slots Component
+// ─── Main Component ───────────────────────────────────────────────────────────
+
 const DeliverySlots = () => {
     const [loading, setLoading] = useState(true);
-    const [slots, setSlots] = useState([]);
+    const [slots, setSlots] = useState<Slot[]>([]);
     const [showModal, setShowModal] = useState(false);
-    const [selectedSlot, setSelectedSlot] = useState(null);
+    const [selectedSlot, setSelectedSlot] = useState<Slot | null>(null);
     const [dateFrom, setDateFrom] = useState('');
     const [dateTo, setDateTo] = useState('');
 
     useEffect(() => {
         fetchSlots();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [dateFrom, dateTo]);
 
     const fetchSlots = async () => {
@@ -292,28 +300,20 @@ const DeliverySlots = () => {
                 .order('slot_date', { ascending: false })
                 .order('start_time', { ascending: true });
 
-            if (dateFrom) {
-                query = query.gte('slot_date', dateFrom);
-            }
-            if (dateTo) {
-                query = query.lte('slot_date', dateTo);
-            }
+            if (dateFrom) query = query.gte('slot_date', dateFrom);
+            if (dateTo)   query = query.lte('slot_date', dateTo);
 
             const { data, error } = await query;
+            if (error) { console.error('Error fetching slots:', error); return; }
 
-            if (error) {
-                console.error('Error fetching slots:', error);
-                return;
-            }
-
-            const formattedSlots = data.map(slot => ({
+            const formattedSlots: Slot[] = (data ?? []).map(slot => ({
                 id: slot.id,
                 date: slot.slot_date,
                 startTime: slot.start_time.substring(0, 5),
                 endTime: slot.end_time.substring(0, 5),
                 maxOrders: slot.max_orders,
                 currentOrders: slot.current_orders,
-                isActive: slot.is_active
+                isActive: slot.is_active,
             }));
 
             setSlots(formattedSlots);
@@ -324,27 +324,25 @@ const DeliverySlots = () => {
         }
     };
 
-    const handleToggleStatus = async (slotId, currentStatus) => {
+    const handleToggleStatus = async (slotId: string, currentStatus: boolean) => {
         const { error } = await supabase
             .from('delivery_slots')
             .update({ is_active: !currentStatus })
             .eq('id', slotId);
-
         if (!error) fetchSlots();
     };
 
-    const handleDelete = async (slotId) => {
+    const handleDelete = async (slotId: string) => {
         if (confirm('Are you sure you want to delete this delivery slot?')) {
             const { error } = await supabase
                 .from('delivery_slots')
                 .delete()
                 .eq('id', slotId);
-
             if (!error) fetchSlots();
         }
     };
 
-    const handleEdit = (slot) => {
+    const handleEdit = (slot: Slot) => {
         setSelectedSlot(slot);
         setShowModal(true);
     };
@@ -354,37 +352,37 @@ const DeliverySlots = () => {
         setShowModal(true);
     };
 
-    const formatDate = (dateStr) => {
+    const formatDate = (dateStr: string): string => {
         const date = new Date(dateStr);
         return date.toLocaleDateString('en-US', {
             weekday: 'short',
             month: 'short',
-            day: 'numeric'
+            day: 'numeric',
         });
     };
 
-    const getAvailabilityColor = (current, max) => {
-        const percentage = (current / max) * 100;
-        if (percentage >= 100) return 'bg-red-100 text-red-800';
-        if (percentage >= 70) return 'bg-yellow-100 text-yellow-800';
+    const getAvailabilityColor = (current: number, max: number): string => {
+        const pct = (current / max) * 100;
+        if (pct >= 100) return 'bg-red-100 text-red-800';
+        if (pct >= 70)  return 'bg-yellow-100 text-yellow-800';
         return 'bg-green-100 text-green-800';
     };
 
-    const getAvailabilityStatus = (current, max) => {
-        const percentage = (current / max) * 100;
-        if (percentage >= 100) return 'Full';
-        if (percentage >= 70) return 'Limited';
+    const getAvailabilityStatus = (current: number, max: number): string => {
+        const pct = (current / max) * 100;
+        if (pct >= 100) return 'Full';
+        if (pct >= 70)  return 'Limited';
         return 'Available';
     };
 
-    const groupedSlots = slots.reduce((acc, slot) => {
+    const groupedSlots = slots.reduce<Record<string, Slot[]>>((acc, slot) => {
         if (!acc[slot.date]) acc[slot.date] = [];
         acc[slot.date].push(slot);
         return acc;
     }, {});
 
-    const today = new Date().toISOString().split('T')[0];
-    const todaySlots = slots.filter(s => s.date === today);
+    const today       = new Date().toISOString().split('T')[0];
+    const todaySlots  = slots.filter(s => s.date === today);
     const activeCount = slots.filter(s => s.isActive).length;
     const inactiveCount = slots.filter(s => !s.isActive).length;
 
@@ -398,6 +396,7 @@ const DeliverySlots = () => {
 
     return (
         <div className="space-y-6">
+            {/* Header */}
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                 <div>
                     <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Delivery Slots</h1>
@@ -474,7 +473,7 @@ const DeliverySlots = () => {
                             <Clock className="w-6 h-6 text-yellow-600" />
                         </div>
                         <div>
-                            <p className="text-sm text-gray-600">Today's Slots</p>
+                            <p className="text-sm text-gray-600">Today&apos;s Slots</p>
                             <p className="text-2xl font-bold text-gray-900">{todaySlots.length}</p>
                         </div>
                     </div>
@@ -505,13 +504,14 @@ const DeliverySlots = () => {
                                         {dateSlots.length} slot{dateSlots.length !== 1 ? 's' : ''}
                                     </span>
                                 </div>
-
                                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                                    {dateSlots.map((slot) => (
+                                    {dateSlots.map((slot: Slot) => (
                                         <div
                                             key={slot.id}
                                             className={`border rounded-lg p-4 transition-all ${
-                                                slot.isActive ? 'border-gray-200 hover:border-green-300 hover:shadow-md' : 'border-gray-200 bg-gray-50 opacity-60'
+                                                slot.isActive
+                                                    ? 'border-gray-200 hover:border-green-300 hover:shadow-md'
+                                                    : 'border-gray-200 bg-gray-50 opacity-60'
                                             }`}
                                         >
                                             <div className="flex items-start justify-between mb-3">
@@ -521,22 +521,29 @@ const DeliverySlots = () => {
                                                         {slot.startTime} - {slot.endTime}
                                                     </span>
                                                 </div>
-                                                {slot.isActive ? <Eye className="w-4 h-4 text-green-600" /> : <EyeOff className="w-4 h-4 text-gray-400" />}
+                                                {slot.isActive
+                                                    ? <Eye className="w-4 h-4 text-green-600" />
+                                                    : <EyeOff className="w-4 h-4 text-gray-400" />}
                                             </div>
 
                                             <div className="space-y-2 mb-4">
                                                 <div className="flex items-center justify-between text-sm">
                                                     <span className="text-gray-600">Capacity</span>
-                                                    <span className="font-medium text-gray-900">{slot.currentOrders} / {slot.maxOrders}</span>
+                                                    <span className="font-medium text-gray-900">
+                                                        {slot.currentOrders} / {slot.maxOrders}
+                                                    </span>
                                                 </div>
                                                 <div className="w-full bg-gray-200 rounded-full h-2">
                                                     <div
                                                         className={`h-2 rounded-full ${
-                                                            (slot.currentOrders / slot.maxOrders) >= 1 ? 'bg-red-500' :
-                                                                (slot.currentOrders / slot.maxOrders) >= 0.7 ? 'bg-yellow-500' : 'bg-green-500'
+                                                            slot.currentOrders / slot.maxOrders >= 1
+                                                                ? 'bg-red-500'
+                                                                : slot.currentOrders / slot.maxOrders >= 0.7
+                                                                    ? 'bg-yellow-500'
+                                                                    : 'bg-green-500'
                                                         }`}
-                                                        style={{ width: `${(slot.currentOrders / slot.maxOrders) * 100}%` }}
-                                                    ></div>
+                                                        style={{ width: `${Math.min((slot.currentOrders / slot.maxOrders) * 100, 100)}%` }}
+                                                    />
                                                 </div>
                                                 <span className={`px-2 py-1 rounded-full text-xs font-medium ${getAvailabilityColor(slot.currentOrders, slot.maxOrders)}`}>
                                                     {getAvailabilityStatus(slot.currentOrders, slot.maxOrders)}
@@ -548,15 +555,20 @@ const DeliverySlots = () => {
                                                     onClick={() => handleEdit(slot)}
                                                     className="flex-1 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-lg flex items-center justify-center gap-1"
                                                 >
-                                                    <Edit2 className="w-4 h-4" />
-                                                    Edit
+                                                    <Edit2 className="w-4 h-4" /> Edit
+                                                </button>
+                                                <button
+                                                    onClick={() => handleToggleStatus(slot.id, slot.isActive)}
+                                                    className="flex-1 px-3 py-2 text-sm font-medium text-blue-600 hover:bg-blue-50 rounded-lg flex items-center justify-center gap-1"
+                                                >
+                                                    {slot.isActive ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                                                    {slot.isActive ? 'Hide' : 'Show'}
                                                 </button>
                                                 <button
                                                     onClick={() => handleDelete(slot.id)}
                                                     className="flex-1 px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50 rounded-lg flex items-center justify-center gap-1"
                                                 >
-                                                    <Trash2 className="w-4 h-4" />
-                                                    Delete
+                                                    <Trash2 className="w-4 h-4" /> Delete
                                                 </button>
                                             </div>
                                         </div>
@@ -564,6 +576,12 @@ const DeliverySlots = () => {
                                 </div>
                             </div>
                         ))}
+
+                        {Object.keys(groupedSlots).length === 0 && (
+                            <div className="text-center py-12 text-gray-500">
+                                No delivery slots found. Click &quot;Add Slot&quot; to create one.
+                            </div>
+                        )}
                     </div>
                 </div>
             </div>
@@ -574,15 +592,22 @@ const DeliverySlots = () => {
                     <div key={date} className="bg-white rounded-xl shadow-sm border border-gray-100">
                         <div className="p-4 border-b">
                             <h3 className="font-semibold text-gray-900">{formatDate(date)}</h3>
-                            <p className="text-sm text-gray-500 mt-1">{dateSlots.length} slot{dateSlots.length !== 1 ? 's' : ''}</p>
+                            <p className="text-sm text-gray-500 mt-1">
+                                {dateSlots.length} slot{dateSlots.length !== 1 ? 's' : ''}
+                            </p>
                         </div>
                         <div className="p-4 space-y-3">
-                            {dateSlots.map((slot) => (
-                                <div key={slot.id} className={`border rounded-lg p-4 ${slot.isActive ? 'border-gray-200' : 'bg-gray-50'}`}>
+                            {dateSlots.map((slot: Slot) => (
+                                <div
+                                    key={slot.id}
+                                    className={`border rounded-lg p-4 ${slot.isActive ? 'border-gray-200' : 'bg-gray-50'}`}
+                                >
                                     <div className="flex items-center justify-between mb-3">
                                         <div className="flex items-center gap-2">
                                             <Clock className="w-4 h-4 text-gray-400" />
-                                            <span className="font-semibold text-gray-900">{slot.startTime} - {slot.endTime}</span>
+                                            <span className="font-semibold text-gray-900">
+                                                {slot.startTime} - {slot.endTime}
+                                            </span>
                                         </div>
                                         <span className={`px-2 py-1 rounded-full text-xs font-medium ${getAvailabilityColor(slot.currentOrders, slot.maxOrders)}`}>
                                             {getAvailabilityStatus(slot.currentOrders, slot.maxOrders)}
@@ -591,32 +616,35 @@ const DeliverySlots = () => {
                                     <div className="space-y-2 mb-3">
                                         <div className="flex items-center justify-between text-sm">
                                             <span className="text-gray-600">Orders</span>
-                                            <span className="font-medium text-gray-900">{slot.currentOrders} / {slot.maxOrders}</span>
+                                            <span className="font-medium text-gray-900">
+                                                {slot.currentOrders} / {slot.maxOrders}
+                                            </span>
                                         </div>
                                         <div className="w-full bg-gray-200 rounded-full h-2">
                                             <div
                                                 className={`h-2 rounded-full ${
-                                                    (slot.currentOrders / slot.maxOrders) >= 1 ? 'bg-red-500' :
-                                                        (slot.currentOrders / slot.maxOrders) >= 0.7 ? 'bg-yellow-500' : 'bg-green-500'
+                                                    slot.currentOrders / slot.maxOrders >= 1
+                                                        ? 'bg-red-500'
+                                                        : slot.currentOrders / slot.maxOrders >= 0.7
+                                                            ? 'bg-yellow-500'
+                                                            : 'bg-green-500'
                                                 }`}
-                                                style={{ width: `${(slot.currentOrders / slot.maxOrders) * 100}%` }}
-                                            ></div>
+                                                style={{ width: `${Math.min((slot.currentOrders / slot.maxOrders) * 100, 100)}%` }}
+                                            />
                                         </div>
                                     </div>
                                     <div className="flex items-center gap-2">
                                         <button
                                             onClick={() => handleEdit(slot)}
-                                            className="flex-1 px-3 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg"
+                                            className="flex-1 px-3 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg flex items-center justify-center gap-1"
                                         >
-                                            <Edit2 className="w-4 h-4 inline mr-1" />
-                                            Edit
+                                            <Edit2 className="w-4 h-4" /> Edit
                                         </button>
                                         <button
                                             onClick={() => handleDelete(slot.id)}
-                                            className="flex-1 px-3 py-2 text-sm font-medium text-red-600 bg-red-50 rounded-lg"
+                                            className="flex-1 px-3 py-2 text-sm font-medium text-red-600 bg-red-50 rounded-lg flex items-center justify-center gap-1"
                                         >
-                                            <Trash2 className="w-4 h-4 inline mr-1" />
-                                            Delete
+                                            <Trash2 className="w-4 h-4" /> Delete
                                         </button>
                                     </div>
                                 </div>
@@ -624,14 +652,17 @@ const DeliverySlots = () => {
                         </div>
                     </div>
                 ))}
+
+                {Object.keys(groupedSlots).length === 0 && (
+                    <div className="text-center py-12 text-gray-500 bg-white rounded-xl border border-gray-100">
+                        No delivery slots found.
+                    </div>
+                )}
             </div>
 
             <DeliverySlotModal
                 isOpen={showModal}
-                onClose={() => {
-                    setShowModal(false);
-                    setSelectedSlot(null);
-                }}
+                onClose={() => { setShowModal(false); setSelectedSlot(null); }}
                 slot={selectedSlot}
                 onSave={fetchSlots}
             />
