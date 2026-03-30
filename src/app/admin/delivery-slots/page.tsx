@@ -61,6 +61,7 @@ const DeliverySlotModal = ({ isOpen, onClose, slot, onSave }: DeliverySlotModalP
     }, [isOpen, slot]);
 
     const loadSlotData = () => {
+        if (!slot) return;  // Add this guard
         setFormData({
             slot_date: slot.date || '',
             start_time: slot.startTime || '',
