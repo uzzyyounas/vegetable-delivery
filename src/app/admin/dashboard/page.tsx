@@ -129,6 +129,16 @@ const AdminDashboard = () => {
         });
     };
 
+    type RevenueItem = {
+        date: string;
+        revenue: number;
+        orders: number;
+    };
+
+    type GroupedData = {
+        [key: string]: RevenueItem;
+    };
+
     const fetchRevenueData = async () => {
         const startDate = getStartDate(timeRange);
         const { data: orders } = await supabase
@@ -140,13 +150,17 @@ const AdminDashboard = () => {
 
         if (!orders) return;
 
-        const groupedData = orders.reduce((acc, order) => {
+        // const groupedData = orders.reduce((acc, order) => {
+        const groupedData = orders.reduce<GroupedData>((acc, order) => {
             const date = new Date(order.created_at).toLocaleDateString('en-US', { weekday: 'short' });
+
             if (!acc[date]) {
                 acc[date] = { date, revenue: 0, orders: 0 };
             }
+
             acc[date].revenue += parseFloat(order.total_amount);
             acc[date].orders += 1;
+
             return acc;
         }, {});
 
