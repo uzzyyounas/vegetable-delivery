@@ -11,7 +11,6 @@ import {
     AlertCircle,
     Package,
     Truck,
-    Calendar,
     MapPin,
     Phone,
     Mail,
@@ -22,24 +21,80 @@ import {
 import { createClient } from '@supabase/supabase-js';
 
 const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+interface Rider {
+    id: string;
+    full_name: string;
+    phone: string;
+}
+
+interface OrderCustomer {
+    name: string;
+    phone: string;
+    email: string;
+}
+
+interface Order {
+    id: string;
+    orderNumber: string;
+    customer: OrderCustomer;
+    rider: { full_name: string; phone: string } | null;
+    riderId: string | null;
+    riderAssignedAt: string | null;
+    riderDeliveredAt: string | null;
+    customerRating: number | null;
+    customerFeedback: string | null;
+    items: number;
+    total: number;
+    status: string;
+    paymentStatus: string;
+    paymentMethod: string;
+    deliveryDate: string | null;
+    deliveryTime: string;
+    address: string;
+    pinCode: string;
+    orderDate: string;
+    notes: string | null;
+}
+
+interface OrderItem {
+    id: string;
+    product_name: string;
+    weight_grams: number;
+    quantity: number;
+    unit_price: number;
+    subtotal: number;
+}
+
+interface OrderDetails {
+    order_items: OrderItem[];
+    [key: string]: unknown;
+}
+
+type StatusKey = 'pending' | 'confirmed' | 'packed' | 'out_for_delivery' | 'delivered' | 'cancelled';
+
+// ─── Component ────────────────────────────────────────────────────────────────
+
 const OrdersManagement = () => {
-    const [searchQuery, setSearchQuery] = useState('');
-    const [statusFilter, setStatusFilter] = useState('all');
-    const [selectedOrder, setSelectedOrder] = useState(null);
-    const [loading, setLoading] = useState(true);
-    const [orders, setOrders] = useState([]);
-    const [orderDetails, setOrderDetails] = useState(null);
-    const [riders, setRiders] = useState([]);
-    const [showAssignModal, setShowAssignModal] = useState(false);
-    const [selectedOrderForAssign, setSelectedOrderForAssign] = useState(null);
+    const [searchQuery, setSearchQuery]                     = useState('');
+    const [statusFilter, setStatusFilter]                   = useState('all');
+    const [selectedOrder, setSelectedOrder]                 = useState<Order | null>(null);
+    const [loading, setLoading]                             = useState(true);
+    const [orders, setOrders]                               = useState<Order[]>([]);
+    const [orderDetails, setOrderDetails]                   = useState<OrderDetails | null>(null);
+    const [riders, setRiders]                               = useState<Rider[]>([]);
+    const [showAssignModal, setShowAssignModal]             = useState(false);
+    const [selectedOrderForAssign, setSelectedOrderForAssign] = useState<Order | null>(null);
 
     useEffect(() => {
         fetchOrders();
         fetchRiders();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [statusFilter]);
 
     const fetchRiders = async () => {
@@ -47,10 +102,7 @@ const OrdersManagement = () => {
             .from('profiles')
             .select('id, full_name, phone')
             .eq('role', 'rider');
-
-        console.log('riderId', data);
-
-        setRiders(data || []);
+        setRiders((data as Rider[]) || []);
     };
 
     const fetchOrders = async () => {
@@ -89,40 +141,44 @@ const OrdersManagement = () => {
             }
 
             const { data, error } = await query;
+            if (error) { console.error('Error fetching orders:', error); return; }
 
-            if (error) {
-                console.error('Error fetching orders:', error);
-                return;
-            }
+            // Supabase returns joined relations as arrays; normalise to single objects
+            const formattedOrders: Order[] = (data ?? []).map(order => {
+                const profile      = Array.isArray(order.profiles)       ? order.profiles[0]       : order.profiles;
+                const guest        = Array.isArray(order.guest_customers) ? order.guest_customers[0] : order.guest_customers;
+                const slot         = Array.isArray(order.delivery_slots)  ? order.delivery_slots[0]  : order.delivery_slots;
+                const riderRel     = Array.isArray(order.rider)           ? order.rider[0]           : order.rider;
 
-            const formattedOrders = data.map(order => ({
-                id: order.id,
-                orderNumber: order.order_number,
-                customer: {
-                    name: order.profiles?.full_name || order.guest_customers?.full_name || 'Guest',
-                    phone: order.phone || order.profiles?.phone || order.guest_customers?.phone,
-                    email: order.email || order.guest_customers?.email || ''
-                },
-                rider: order.rider,
-                riderId: order.rider_id,
-                riderAssignedAt: order.rider_assigned_at,
-                riderDeliveredAt: order.rider_delivered_at,
-                customerRating: order.customer_rating,
-                customerFeedback: order.customer_feedback,
-                items: order.order_items?.reduce((sum, item) => sum + item.quantity, 0) || 0,
-                total: parseFloat(order.total_amount),
-                status: order.status,
-                paymentStatus: order.payment_status,
-                paymentMethod: order.payment_method,
-                deliveryDate: order.delivery_slots?.slot_date,
-                deliveryTime: order.delivery_slots
-                    ? `${order.delivery_slots.start_time} - ${order.delivery_slots.end_time}`
-                    : 'Not scheduled',
-                address: order.delivery_address,
-                pinCode: order.pin_code,
-                orderDate: new Date(order.created_at).toLocaleString(),
-                notes: order.notes
-            }));
+                return {
+                    id:               order.id,
+                    orderNumber:      order.order_number,
+                    customer: {
+                        name:  (profile as { full_name: string } | null)?.full_name  || (guest as { full_name: string } | null)?.full_name  || 'Guest',
+                        phone: order.phone || (profile as { phone: string } | null)?.phone || (guest as { phone: string } | null)?.phone || '',
+                        email: order.email || (guest  as { email: string } | null)?.email  || '',
+                    },
+                    rider:            riderRel as { full_name: string; phone: string } | null,
+                    riderId:          order.rider_id,
+                    riderAssignedAt:  order.rider_assigned_at,
+                    riderDeliveredAt: order.rider_delivered_at,
+                    customerRating:   order.customer_rating,
+                    customerFeedback: order.customer_feedback,
+                    items:            (order.order_items as { quantity: number }[])?.reduce((sum, item) => sum + item.quantity, 0) || 0,
+                    total:            parseFloat(order.total_amount),
+                    status:           order.status,
+                    paymentStatus:    order.payment_status,
+                    paymentMethod:    order.payment_method,
+                    deliveryDate:     (slot as { slot_date: string } | null)?.slot_date ?? null,
+                    deliveryTime:     slot
+                        ? `${(slot as { start_time: string }).start_time} - ${(slot as { end_time: string }).end_time}`
+                        : 'Not scheduled',
+                    address:  order.delivery_address,
+                    pinCode:  order.pin_code,
+                    orderDate: new Date(order.created_at).toLocaleString(),
+                    notes:    order.notes,
+                };
+            });
 
             setOrders(formattedOrders);
         } catch (error) {
@@ -132,7 +188,7 @@ const OrdersManagement = () => {
         }
     };
 
-    const fetchOrderDetails = async (orderId) => {
+    const fetchOrderDetails = async (orderId: string) => {
         const { data, error } = await supabase
             .from('orders')
             .select(`
@@ -153,39 +209,32 @@ const OrdersManagement = () => {
             .eq('id', orderId)
             .single();
 
-        if (!error) {
-            setOrderDetails(data);
-        }
+        if (!error) setOrderDetails(data as OrderDetails);
     };
 
-    const handleViewOrder = async (order) => {
+    const handleViewOrder = async (order: Order) => {
         setSelectedOrder(order);
         await fetchOrderDetails(order.id);
     };
 
-    const handleUpdateStatus = async (orderId, newStatus) => {
-
-        const {data,error } = await supabase
+    const handleUpdateStatus = async (orderId: string, newStatus: string) => {
+        const { error } = await supabase
             .from('orders')
             .update({ status: newStatus })
             .eq('id', orderId);
 
         if (!error) {
-            console.log('123');
-            await supabase
-                .from('order_status_history')
-                .insert({
-                    order_id: orderId,
-                    status: newStatus,
-                    notes: `Status updated to ${newStatus} by usman`
-                });
-
+            await supabase.from('order_status_history').insert({
+                order_id: orderId,
+                status: newStatus,
+                notes: `Status updated to ${newStatus} by admin`,
+            });
             fetchOrders();
             setSelectedOrder(null);
         }
     };
 
-    const handleAssignRider = async (riderId) => {
+    const handleAssignRider = async (riderId: string) => {
         if (!selectedOrderForAssign) return;
 
         const { error } = await supabase
@@ -193,19 +242,16 @@ const OrdersManagement = () => {
             .update({
                 rider_id: riderId,
                 rider_assigned_at: new Date().toISOString(),
-                status: 'out_for_delivery'
+                status: 'out_for_delivery',
             })
             .eq('id', selectedOrderForAssign.id);
 
         if (!error) {
-            await supabase
-                .from('order_status_history')
-                .insert({
-                    order_id: selectedOrderForAssign.id,
-                    status: 'out_for_delivery',
-                    notes: 'Order assigned to rider by admin'
-                });
-
+            await supabase.from('order_status_history').insert({
+                order_id: selectedOrderForAssign.id,
+                status: 'out_for_delivery',
+                notes: 'Order assigned to rider by admin',
+            });
             fetchOrders();
             setShowAssignModal(false);
             setSelectedOrderForAssign(null);
@@ -213,16 +259,12 @@ const OrdersManagement = () => {
         }
     };
 
-    const handleUnassignRider = async (orderId) => {
+    const handleUnassignRider = async (orderId: string) => {
         if (!confirm('Are you sure you want to unassign this rider?')) return;
 
         const { error } = await supabase
             .from('orders')
-            .update({
-                rider_id: null,
-                rider_assigned_at: null,
-                status: 'packed'
-            })
+            .update({ rider_id: null, rider_assigned_at: null, status: 'packed' })
             .eq('id', orderId);
 
         if (!error) {
@@ -231,47 +273,30 @@ const OrdersManagement = () => {
         }
     };
 
-    const statusConfig = {
-        pending: {
-            label: 'Pending',
-            color: 'bg-yellow-100 text-yellow-800',
-            icon: AlertCircle,
-        },
-        confirmed: {
-            label: 'Confirmed',
-            color: 'bg-blue-100 text-blue-800',
-            icon: CheckCircle,
-        },
-        packed: {
-            label: 'Packed',
-            color: 'bg-purple-100 text-purple-800',
-            icon: Package,
-        },
-        out_for_delivery: {
-            label: 'Out for Delivery',
-            color: 'bg-orange-100 text-orange-800',
-            icon: Truck,
-        },
-        delivered: {
-            label: 'Delivered',
-            color: 'bg-green-100 text-green-800',
-            icon: CheckCircle,
-        },
-        cancelled: {
-            label: 'Cancelled',
-            color: 'bg-red-100 text-red-800',
-            icon: XCircle,
-        }
+    // ─── Status config ────────────────────────────────────────────────────────
+
+    const statusConfig: Record<StatusKey, { label: string; color: string; icon: React.ElementType }> = {
+        pending:          { label: 'Pending',          color: 'bg-yellow-100 text-yellow-800', icon: AlertCircle },
+        confirmed:        { label: 'Confirmed',        color: 'bg-blue-100 text-blue-800',     icon: CheckCircle },
+        packed:           { label: 'Packed',           color: 'bg-purple-100 text-purple-800', icon: Package },
+        out_for_delivery: { label: 'Out for Delivery', color: 'bg-orange-100 text-orange-800', icon: Truck },
+        delivered:        { label: 'Delivered',        color: 'bg-green-100 text-green-800',   icon: CheckCircle },
+        cancelled:        { label: 'Cancelled',        color: 'bg-red-100 text-red-800',       icon: XCircle },
     };
 
-    const statusCounts = {
-        all: orders.length,
-        pending: orders.filter(o => o.status === 'pending').length,
-        confirmed: orders.filter(o => o.status === 'confirmed').length,
-        packed: orders.filter(o => o.status === 'packed').length,
+    const getStatusConfig = (status: string) =>
+        statusConfig[status as StatusKey] ?? { label: status, color: 'bg-gray-100 text-gray-800', icon: Clock };
+
+    // ─── Derived data ─────────────────────────────────────────────────────────
+
+    const statusCounts: Record<string, number> = {
+        all:              orders.length,
+        pending:          orders.filter(o => o.status === 'pending').length,
+        confirmed:        orders.filter(o => o.status === 'confirmed').length,
+        packed:           orders.filter(o => o.status === 'packed').length,
         out_for_delivery: orders.filter(o => o.status === 'out_for_delivery').length,
-        delivered: orders.filter(o => o.status === 'delivered').length,
-        cancelled: orders.filter(o => o.status === 'cancelled').length
+        delivered:        orders.filter(o => o.status === 'delivered').length,
+        cancelled:        orders.filter(o => o.status === 'cancelled').length,
     };
 
     const filteredOrders = orders.filter(order =>
@@ -312,9 +337,7 @@ const OrdersManagement = () => {
                                 }`}
                             >
                                 {key.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')}
-                                <span className="ml-2 px-2 py-0.5 rounded-full bg-gray-100 text-xs">
-                                    {count}
-                                </span>
+                                <span className="ml-2 px-2 py-0.5 rounded-full bg-gray-100 text-xs">{count}</span>
                             </button>
                         ))}
                     </div>
@@ -351,7 +374,8 @@ const OrdersManagement = () => {
                         </thead>
                         <tbody className="divide-y divide-gray-200">
                         {filteredOrders.map((order) => {
-                            const StatusIcon = statusConfig[order.status]?.icon || AlertCircle;
+                            const cfg = getStatusConfig(order.status);
+                            const StatusIcon = cfg.icon;
                             return (
                                 <tr key={order.id} className="hover:bg-gray-50 transition-colors">
                                     <td className="px-6 py-4">
@@ -370,40 +394,33 @@ const OrdersManagement = () => {
                                             </div>
                                         ) : (
                                             <button
-                                                onClick={() => {
-                                                    setSelectedOrderForAssign(order);
-                                                    setShowAssignModal(true);
-                                                }}
+                                                onClick={() => { setSelectedOrderForAssign(order); setShowAssignModal(true); }}
                                                 className="text-blue-600 hover:text-blue-700 font-medium text-sm flex items-center gap-1"
                                             >
-                                                <Bike className="w-4 h-4" />
-                                                Assign Rider
+                                                <Bike className="w-4 h-4" /> Assign Rider
                                             </button>
                                         )}
                                     </td>
                                     <td className="px-6 py-4">
                                         <p className="font-semibold text-gray-900">PKR {order.total}</p>
                                         <span className={`text-xs px-2 py-0.5 rounded-full ${
-                                            order.paymentMethod === 'cod'
-                                                ? 'bg-yellow-100 text-yellow-800'
-                                                : 'bg-blue-100 text-blue-800'
+                                            order.paymentMethod === 'cod' ? 'bg-yellow-100 text-yellow-800' : 'bg-blue-100 text-blue-800'
                                         }`}>
-                                            {order.paymentMethod === 'cod' ? 'COD' : 'Online'}
-                                        </span>
+                                                {order.paymentMethod === 'cod' ? 'COD' : 'Online'}
+                                            </span>
                                     </td>
                                     <td className="px-6 py-4">
-                                        <span className={`px-3 py-1.5 rounded-full text-xs font-medium flex items-center gap-1.5 w-fit ${statusConfig[order.status]?.color}`}>
-                                            <StatusIcon className="w-3.5 h-3.5" />
-                                            {statusConfig[order.status]?.label}
-                                        </span>
+                                            <span className={`px-3 py-1.5 rounded-full text-xs font-medium flex items-center gap-1.5 w-fit ${cfg.color}`}>
+                                                <StatusIcon className="w-3.5 h-3.5" />
+                                                {cfg.label}
+                                            </span>
                                     </td>
                                     <td className="px-6 py-4">
                                         <button
                                             onClick={() => handleViewOrder(order)}
                                             className="text-green-600 hover:text-green-700 font-medium text-sm flex items-center gap-1 ml-auto"
                                         >
-                                            <Eye className="w-4 h-4" />
-                                            View
+                                            <Eye className="w-4 h-4" /> View
                                         </button>
                                     </td>
                                 </tr>
@@ -417,7 +434,8 @@ const OrdersManagement = () => {
             {/* Mobile Cards */}
             <div className="lg:hidden space-y-4">
                 {filteredOrders.map((order) => {
-                    const StatusIcon = statusConfig[order.status]?.icon || AlertCircle;
+                    const cfg = getStatusConfig(order.status);
+                    const StatusIcon = cfg.icon;
                     return (
                         <div key={order.id} className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
                             <div className="flex items-start justify-between mb-3">
@@ -425,9 +443,9 @@ const OrdersManagement = () => {
                                     <p className="font-bold text-gray-900">{order.orderNumber}</p>
                                     <p className="text-xs text-gray-500 mt-0.5">{order.orderDate}</p>
                                 </div>
-                                <span className={`px-2.5 py-1 rounded-full text-xs font-medium flex items-center gap-1 ${statusConfig[order.status]?.color}`}>
+                                <span className={`px-2.5 py-1 rounded-full text-xs font-medium flex items-center gap-1 ${cfg.color}`}>
                                     <StatusIcon className="w-3 h-3" />
-                                    {statusConfig[order.status]?.label}
+                                    {cfg.label}
                                 </span>
                             </div>
 
@@ -443,14 +461,10 @@ const OrdersManagement = () => {
                                     </div>
                                 ) : (
                                     <button
-                                        onClick={() => {
-                                            setSelectedOrderForAssign(order);
-                                            setShowAssignModal(true);
-                                        }}
+                                        onClick={() => { setSelectedOrderForAssign(order); setShowAssignModal(true); }}
                                         className="text-blue-600 hover:text-blue-700 font-medium text-sm flex items-center gap-1"
                                     >
-                                        <Bike className="w-4 h-4" />
-                                        Assign Rider
+                                        <Bike className="w-4 h-4" /> Assign Rider
                                     </button>
                                 )}
                             </div>
@@ -476,16 +490,11 @@ const OrdersManagement = () => {
             {selectedOrder && orderDetails && (
                 <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
                     <div className="bg-white rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-                        <div className="p-6 border-b border-gray-200">
-                            <div className="flex items-center justify-between">
-                                <h2 className="text-xl font-bold text-gray-900">Order Details</h2>
-                                <button
-                                    onClick={() => setSelectedOrder(null)}
-                                    className="p-2 hover:bg-gray-100 rounded-lg"
-                                >
-                                    <XCircle className="w-6 h-6 text-gray-600" />
-                                </button>
-                            </div>
+                        <div className="p-6 border-b border-gray-200 flex items-center justify-between">
+                            <h2 className="text-xl font-bold text-gray-900">Order Details</h2>
+                            <button onClick={() => setSelectedOrder(null)} className="p-2 hover:bg-gray-100 rounded-lg">
+                                <XCircle className="w-6 h-6 text-gray-600" />
+                            </button>
                         </div>
 
                         <div className="p-6 space-y-6">
@@ -505,10 +514,7 @@ const OrdersManagement = () => {
                                 <div className="border-t pt-4">
                                     <div className="flex items-center justify-between mb-3">
                                         <h3 className="font-semibold text-gray-900">Rider Information</h3>
-                                        <button
-                                            onClick={() => handleUnassignRider(selectedOrder.id)}
-                                            className="text-sm text-red-600 hover:text-red-700"
-                                        >
+                                        <button onClick={() => handleUnassignRider(selectedOrder.id)} className="text-sm text-red-600 hover:text-red-700">
                                             Unassign
                                         </button>
                                     </div>
@@ -531,7 +537,7 @@ const OrdersManagement = () => {
                             )}
 
                             {/* Customer Feedback */}
-                            {selectedOrder.customerRating && (
+                            {selectedOrder.customerRating != null && (
                                 <div className="border-t pt-4">
                                     <h3 className="font-semibold text-gray-900 mb-3">Customer Feedback</h3>
                                     <div className="flex items-center gap-2 mb-2">
@@ -539,15 +545,13 @@ const OrdersManagement = () => {
                                             <Star
                                                 key={i}
                                                 className={`w-5 h-5 ${
-                                                    i < selectedOrder.customerRating
+                                                    i < (selectedOrder.customerRating ?? 0)
                                                         ? 'text-yellow-400 fill-yellow-400'
                                                         : 'text-gray-300'
                                                 }`}
                                             />
                                         ))}
-                                        <span className="text-sm text-gray-600">
-                                            ({selectedOrder.customerRating}/5)
-                                        </span>
+                                        <span className="text-sm text-gray-600">({selectedOrder.customerRating}/5)</span>
                                     </div>
                                     {selectedOrder.customerFeedback && (
                                         <p className="text-sm text-gray-700 bg-gray-50 p-3 rounded-lg">
@@ -587,7 +591,7 @@ const OrdersManagement = () => {
                                 <div className="border-t pt-4">
                                     <h3 className="font-semibold text-gray-900 mb-3">Order Items</h3>
                                     <div className="space-y-2">
-                                        {orderDetails.order_items.map((item) => (
+                                        {orderDetails.order_items.map((item: OrderItem) => (
                                             <div key={item.id} className="flex justify-between items-center py-2 border-b border-gray-100">
                                                 <div>
                                                     <p className="font-medium text-gray-900">{item.product_name}</p>
@@ -631,9 +635,7 @@ const OrdersManagement = () => {
                     <div className="bg-white rounded-xl max-w-md w-full">
                         <div className="p-6 border-b">
                             <h3 className="text-lg font-bold text-gray-900">Assign Rider</h3>
-                            <p className="text-sm text-gray-500 mt-1">
-                                Order: {selectedOrderForAssign?.orderNumber}
-                            </p>
+                            <p className="text-sm text-gray-500 mt-1">Order: {selectedOrderForAssign?.orderNumber}</p>
                         </div>
                         <div className="p-6 space-y-3 max-h-96 overflow-y-auto">
                             {riders.map((rider) => (
@@ -654,10 +656,7 @@ const OrdersManagement = () => {
                         </div>
                         <div className="p-6 border-t flex justify-end">
                             <button
-                                onClick={() => {
-                                    setShowAssignModal(false);
-                                    setSelectedOrderForAssign(null);
-                                }}
+                                onClick={() => { setShowAssignModal(false); setSelectedOrderForAssign(null); }}
                                 className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
                             >
                                 Cancel
