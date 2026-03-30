@@ -242,26 +242,37 @@ const AdminDashboard = () => {
         const { data: orders } = await supabase
             .from('orders')
             .select(`
-        id,
-        order_number,
-        total_amount,
-        status,
-        created_at,
-        profiles:user_id (full_name),
-        guest_customers:guest_customer_id (full_name)
-      `)
+            id,
+            order_number,
+            total_amount,
+            status,
+            created_at,
+            profiles:user_id (full_name),
+            guest_customers:guest_customer_id (full_name)
+        `)
             .order('created_at', { ascending: false })
             .limit(5);
 
         if (!orders) return;
 
-        const formatted = orders.map(order => ({
-            id: order.order_number,
-            customer: order.profiles?.full_name || order.guest_customers?.full_name || 'Guest',
-            amount: parseFloat(order.total_amount),
-            status: order.status,
-            time: getTimeAgo(order.created_at)
-        }));
+        const formatted = orders.map(order => {
+            const profile = Array.isArray(order.profiles)
+                ? order.profiles[0]
+                : order.profiles;
+            const guest = Array.isArray(order.guest_customers)
+                ? order.guest_customers[0]
+                : order.guest_customers;
+
+            return {
+                id: order.order_number,
+                customer: (profile as { full_name: string } | null)?.full_name
+                    || (guest as { full_name: string } | null)?.full_name
+                    || 'Guest',
+                amount: parseFloat(order.total_amount),
+                status: order.status,
+                time: getTimeAgo(order.created_at)
+            };
+        });
 
         setRecentOrders(formatted);
     };
