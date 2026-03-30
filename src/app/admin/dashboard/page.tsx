@@ -56,9 +56,6 @@ const AdminDashboard = () => {
         }
     };
 
-    const currentCount = currentOrders?.length ?? 0;
-    const previousCount = previousOrders?.length ?? 0;
-
     const fetchStats = async () => {
         const now = new Date();
         const startOfPeriod = getStartDate(timeRange);
@@ -110,11 +107,14 @@ const AdminDashboard = () => {
                 change: previousRevenue > 0 ? ((currentRevenue - previousRevenue) / previousRevenue) * 100 : 0
             },
             orders: {
-                current: currentCount,
-                previous: previousCount,
-                change: previousCount > 0
-                    ? ((currentCount - previousCount) / previousCount) * 100
-                    : 0
+                current: currentOrders?.length || 0,
+                previous: previousOrders?.length || 0,
+                // change: previousOrders?.length > 0 ? ((currentOrders?.length - previousOrders?.length) / previousOrders?.length) * 100 : 0
+                change:
+                    (previousOrders?.length ?? 0) > 0
+                        ? (((currentOrders?.length ?? 0) - (previousOrders?.length ?? 0)) /
+                        (previousOrders?.length ?? 0)) * 100
+                        : 0,
             },
             products: {
                 current: totalProducts || 0,
