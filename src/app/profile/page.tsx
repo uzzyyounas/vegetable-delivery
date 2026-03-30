@@ -1,12 +1,21 @@
 // src/app/profile/page.tsx
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { User, Package, LogOut, Loader2, Mail, Phone, Shield, Bike } from 'lucide-react'
 import { OrderStatusBadge } from '@/components/orders/OrderTracker'
 import Link from 'next/link'
+import { User as SupabaseUser } from '@supabase/supabase-js'
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+interface Profile {
+    full_name: string
+    phone: string
+    role: 'admin' | 'rider' | 'customer' | null
+}
 
 interface Order {
     id: string
@@ -20,40 +29,47 @@ interface Order {
     } | null
 }
 
+// Raw shape Supabase returns (delivery_slot as array due to join)
+interface RawOrder {
+    id: string
+    order_number: string
+    total_amount: number
+    status: Order['status']
+    created_at: string
+    delivery_slot: { slot_date: string; start_time: string }[]
+}
+
+// ─── Component ────────────────────────────────────────────────────────────────
+
 export default function ProfilePage() {
-    const [user, setUser] = useState<any>(null)
-    const [profile, setProfile] = useState<any>(null)
-    const [orders, setOrders] = useState<Order[]>([])
+    const [user, setUser]           = useState<SupabaseUser | null>(null)
+    const [profile, setProfile]     = useState<Profile | null>(null)
+    const [orders, setOrders]       = useState<Order[]>([])
     const [isLoading, setIsLoading] = useState(true)
     const [activeTab, setActiveTab] = useState<'orders' | 'profile'>('orders')
 
-    const router = useRouter()
+    const router   = useRouter()
     const supabase = createClient()
 
-    useEffect(() => {
-        fetchUserData()
-    }, [])
-
-    const fetchUserData = async () => {
+    const fetchUserData = useCallback(async () => {
         setIsLoading(true)
-
         try {
-            const { data: { user }, error: userError } = await supabase.auth.getUser()
+            const { data: { user: currentUser }, error: userError } = await supabase.auth.getUser()
 
-            if (userError || !user) {
+            if (userError || !currentUser) {
                 router.push('/login')
                 return
             }
 
-            setUser(user)
+            setUser(currentUser)
 
             const { data: profileData } = await supabase
                 .from('profiles')
                 .select('*')
-                .eq('id', user.id)
+                .eq('id', currentUser.id)
                 .single()
 
-            setProfile(profileData)
+            setProfile(profileData as Profile | null)
 
             const { data: ordersData } = await supabase
                 .from('orders')
@@ -65,16 +81,28 @@ export default function ProfilePage() {
                     created_at,
                     delivery_slot:delivery_slots(slot_date, start_time)
                 `)
-                .eq('user_id', user.id)
+                .eq('user_id', currentUser.id)
                 .order('created_at', { ascending: false })
 
-            setOrders(ordersData as Order[] || [])
+            // Normalise delivery_slot from array to single object
+            const normalised: Order[] = ((ordersData as RawOrder[]) || []).map(o => ({
+                ...o,
+                delivery_slot: Array.isArray(o.delivery_slot)
+                    ? (o.delivery_slot[0] ?? null)
+                    : o.delivery_slot
+            }))
+
+            setOrders(normalised)
         } catch (error) {
             console.error('Error fetching user data:', error)
         } finally {
             setIsLoading(false)
         }
-    }
+    }, [supabase, router])
+
+    useEffect(() => {
+        fetchUserData()
+    }, [fetchUserData])
 
     const handleLogout = async () => {
         await supabase.auth.signOut()
@@ -83,9 +111,9 @@ export default function ProfilePage() {
 
     const formatDate = (dateStr: string) => {
         return new Date(dateStr).toLocaleDateString('en-IN', {
-            day: 'numeric',
+            day:   'numeric',
             month: 'short',
-            year: 'numeric'
+            year:  'numeric'
         })
     }
 
@@ -122,7 +150,6 @@ export default function ProfilePage() {
                     {/* Sidebar */}
                     <div className="lg:col-span-1">
                         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-                            {/* Profile Info */}
                             <div className="text-center mb-6">
                                 <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
                                     <User className="w-10 h-10 text-green-600" />
@@ -130,10 +157,7 @@ export default function ProfilePage() {
                                 <h2 className="font-semibold text-gray-900 text-lg">
                                     {profile?.full_name || user?.user_metadata?.full_name || 'User'}
                                 </h2>
-                                <p className="text-sm text-gray-600 mt-1">
-                                    {user?.email}
-                                </p>
-                                {/* Role Badge */}
+                                <p className="text-sm text-gray-600 mt-1">{user?.email}</p>
                                 {profile?.role && (
                                     <span className={`inline-block mt-2 px-3 py-1 rounded-full text-xs font-medium ${
                                         profile.role === 'admin'
@@ -143,13 +167,11 @@ export default function ProfilePage() {
                                                 : 'bg-gray-100 text-gray-800'
                                     }`}>
                                         {profile.role === 'admin' ? '👑 Admin' :
-                                            profile.role === 'rider' ? '🚴 Rider' :
-                                                '👤 Customer'}
+                                            profile.role === 'rider' ? '🚴 Rider' : '👤 Customer'}
                                     </span>
                                 )}
                             </div>
 
-                            {/* Navigation */}
                             <nav className="space-y-2">
                                 <button
                                     onClick={() => setActiveTab('orders')}
@@ -159,8 +181,7 @@ export default function ProfilePage() {
                                             : 'text-gray-700 hover:bg-gray-50'
                                     }`}
                                 >
-                                    <Package className="w-5 h-5" />
-                                    My Orders
+                                    <Package className="w-5 h-5" /> My Orders
                                 </button>
 
                                 <button
@@ -171,11 +192,9 @@ export default function ProfilePage() {
                                             : 'text-gray-700 hover:bg-gray-50'
                                     }`}
                                 >
-                                    <User className="w-5 h-5" />
-                                    Profile Details
+                                    <User className="w-5 h-5" /> Profile Details
                                 </button>
 
-                                {/* Admin Panel */}
                                 <Link
                                     href="/admin/dashboard"
                                     className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
@@ -184,15 +203,11 @@ export default function ProfilePage() {
                                             : 'text-gray-400 bg-gray-100 cursor-not-allowed'
                                     }`}
                                     aria-disabled={profile?.role !== 'admin'}
-                                    onClick={(e) => {
-                                        if (profile?.role !== 'admin') e.preventDefault()
-                                    }}
+                                    onClick={(e) => { if (profile?.role !== 'admin') e.preventDefault() }}
                                 >
-                                    <Shield className="w-5 h-5" />
-                                    Admin Panel
+                                    <Shield className="w-5 h-5" /> Admin Panel
                                 </Link>
 
-                                {/* Rider Dashboard */}
                                 <Link
                                     href="/rider/dashboard"
                                     className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
@@ -201,12 +216,9 @@ export default function ProfilePage() {
                                             : 'text-gray-400 bg-gray-100 cursor-not-allowed'
                                     }`}
                                     aria-disabled={profile?.role !== 'rider'}
-                                    onClick={(e) => {
-                                        if (profile?.role !== 'rider') e.preventDefault()
-                                    }}
+                                    onClick={(e) => { if (profile?.role !== 'rider') e.preventDefault() }}
                                 >
-                                    <Bike className="w-5 h-5" />
-                                    Rider Dashboard
+                                    <Bike className="w-5 h-5" /> Rider Dashboard
                                 </Link>
                             </nav>
                         </div>
@@ -223,20 +235,14 @@ export default function ProfilePage() {
                                         <Package className="w-16 h-16 text-gray-300 mx-auto mb-4" />
                                         <h3 className="text-lg font-semibold text-gray-900 mb-2">No orders yet</h3>
                                         <p className="text-gray-600 mb-6">Start shopping to see your orders here</p>
-                                        <Link
-                                            href="/"
-                                            className="inline-block bg-green-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-green-700"
-                                        >
+                                        <Link href="/" className="inline-block bg-green-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-green-700">
                                             Start Shopping
                                         </Link>
                                     </div>
                                 ) : (
                                     <div className="space-y-4">
                                         {orders.map((order) => (
-                                            <div
-                                                key={order.id}
-                                                className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 hover:shadow-md transition-shadow"
-                                            >
+                                            <div key={order.id} className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 hover:shadow-md transition-shadow">
                                                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4">
                                                     <div>
                                                         <h3 className="font-semibold text-gray-900 text-lg mb-1">
@@ -262,9 +268,7 @@ export default function ProfilePage() {
                                                         <span>
                                                             Delivery: {formatDate(order.delivery_slot.slot_date)} at{' '}
                                                             {new Date(`2000-01-01T${order.delivery_slot.start_time}`).toLocaleTimeString('en-IN', {
-                                                                hour: 'numeric',
-                                                                minute: '2-digit',
-                                                                hour12: true
+                                                                hour: 'numeric', minute: '2-digit', hour12: true
                                                             })}
                                                         </span>
                                                     </div>
@@ -293,48 +297,29 @@ export default function ProfilePage() {
                         {activeTab === 'profile' && (
                             <div>
                                 <h1 className="text-2xl font-bold text-gray-900 mb-6">Profile Details</h1>
-
                                 <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
                                     <div className="space-y-6">
                                         <div>
                                             <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-2">
-                                                <User className="w-4 h-4" />
-                                                Full Name
+                                                <User className="w-4 h-4" /> Full Name
                                             </label>
-                                            <input
-                                                type="text"
-                                                value={profile?.full_name || ''}
-                                                readOnly
-                                                className="w-full px-4 py-3 border border-gray-300 rounded-lg bg-gray-50"
-                                            />
+                                            <input type="text" value={profile?.full_name || ''} readOnly
+                                                   className="w-full px-4 py-3 border border-gray-300 rounded-lg bg-gray-50" />
                                         </div>
-
                                         <div>
                                             <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-2">
-                                                <Mail className="w-4 h-4" />
-                                                Email Address
+                                                <Mail className="w-4 h-4" /> Email Address
                                             </label>
-                                            <input
-                                                type="email"
-                                                value={user?.email || ''}
-                                                readOnly
-                                                className="w-full px-4 py-3 border border-gray-300 rounded-lg bg-gray-50"
-                                            />
+                                            <input type="email" value={user?.email || ''} readOnly
+                                                   className="w-full px-4 py-3 border border-gray-300 rounded-lg bg-gray-50" />
                                         </div>
-
                                         <div>
                                             <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-2">
-                                                <Phone className="w-4 h-4" />
-                                                Phone Number
+                                                <Phone className="w-4 h-4" /> Phone Number
                                             </label>
-                                            <input
-                                                type="tel"
-                                                value={profile?.phone || ''}
-                                                readOnly
-                                                className="w-full px-4 py-3 border border-gray-300 rounded-lg bg-gray-50"
-                                            />
+                                            <input type="tel" value={profile?.phone || ''} readOnly
+                                                   className="w-full px-4 py-3 border border-gray-300 rounded-lg bg-gray-50" />
                                         </div>
-
                                         <div className="pt-4 border-t">
                                             <h3 className="font-semibold text-gray-900 mb-3">Account Statistics</h3>
                                             <div className="grid grid-cols-2 gap-4">
