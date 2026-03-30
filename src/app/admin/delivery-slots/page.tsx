@@ -21,8 +21,26 @@ const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
+interface Slot {
+    id: string;
+    date: string;
+    startTime: string;
+    endTime: string;
+    maxOrders: number;
+    currentOrders: number;
+    isActive: boolean;
+}
+
+interface DeliverySlotModalProps {
+    isOpen: boolean;
+    onClose: () => void;
+    slot: Slot | null;
+    onSave: () => void;
+}
+
 // Delivery Slot Modal Component
-const DeliverySlotModal = ({ isOpen, onClose, slot, onSave }) => {
+// const DeliverySlotModal = ({ isOpen, onClose, slot, onSave }) => {
+const DeliverySlotModal = ({ isOpen, onClose, slot, onSave }: DeliverySlotModalProps) => {
     const [loading, setLoading] = useState(false);
     const [formData, setFormData] = useState({
         slot_date: '',
