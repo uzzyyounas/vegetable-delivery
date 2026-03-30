@@ -277,7 +277,7 @@ const AdminDashboard = () => {
         setRecentOrders(formatted);
     };
 
-    const getStartDate = (range) => {
+    const getStartDate = (range: string): Date => {
         const now = new Date();
         switch (range) {
             case 'today':
@@ -293,7 +293,7 @@ const AdminDashboard = () => {
         }
     };
 
-    const getPreviousPeriodStart = (range) => {
+    const getPreviousPeriodStart = (range: string): Date => {
         const now = new Date();
         switch (range) {
             case 'today':
@@ -309,10 +309,10 @@ const AdminDashboard = () => {
         }
     };
 
-    const getTimeAgo = (date) => {
+    const getTimeAgo = (date: string): string => {
         const now = new Date();
         const past = new Date(date);
-        const diffMs = now - past;
+        const diffMs = now.getTime() - past.getTime();
         const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
 
         if (diffHours < 1) return 'Just now';
@@ -321,8 +321,8 @@ const AdminDashboard = () => {
         return `${diffDays}d ago`;
     };
 
-    const getStatusColor = (status) => {
-        const colors = {
+    const getStatusColor = (status: string): string => {
+        const colors: Record<string, string> = {
             delivered: 'bg-green-100 text-green-800',
             processing: 'bg-blue-100 text-blue-800',
             pending: 'bg-yellow-100 text-yellow-800',
@@ -332,8 +332,8 @@ const AdminDashboard = () => {
         return colors[status] || 'bg-gray-100 text-gray-800';
     };
 
-    const getStatusIcon = (status) => {
-        const icons = {
+    const getStatusIcon = (status: string): React.ReactNode => {
+        const icons: Record<string, React.ReactNode> = {
             delivered: <CheckCircle className="w-4 h-4" />,
             processing: <Clock className="w-4 h-4" />,
             pending: <AlertCircle className="w-4 h-4" />,
