@@ -218,7 +218,7 @@ const AdminDashboard = () => {
 
         if (!orderItems) return;
 
-        const productStats = orderItems.reduce((acc, item) => {
+        const productStats = orderItems.reduce<Record<string, TopProduct>>((acc, item) => {
             if (!acc[item.product_id]) {
                 acc[item.product_id] = {
                     name: item.product_name,
@@ -231,7 +231,7 @@ const AdminDashboard = () => {
             return acc;
         }, {});
 
-        const sorted = Object.values(productStats)
+        const sorted = (Object.values(productStats) as TopProduct[])
             .sort((a, b) => b.sold - a.sold)
             .slice(0, 5);
 
