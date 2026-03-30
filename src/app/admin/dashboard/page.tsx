@@ -16,6 +16,32 @@ import {
 import { LineChart, Line, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { createClient } from '@supabase/supabase-js';
 
+interface RevenueItem {
+    date: string;
+    revenue: number;
+    orders: number;
+}
+
+interface CategoryItem {
+    name: string;
+    value: number;
+    color: string;
+}
+
+interface TopProduct {
+    name: string;
+    sold: number;
+    revenue: number;
+}
+
+interface RecentOrder {
+    id: string;
+    customer: string;
+    amount: number;
+    status: string;
+    time: string;
+}
+
 const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
@@ -30,10 +56,14 @@ const AdminDashboard = () => {
         products: { current: 0, active: 0, inactive: 0 },
         customers: { current: 0, new: 0, change: 0 }
     });
-    const [revenueData, setRevenueData] = useState([]);
-    const [categoryData, setCategoryData] = useState([]);
-    const [topProducts, setTopProducts] = useState([]);
-    const [recentOrders, setRecentOrders] = useState([]);
+    // const [revenueData, setRevenueData] = useState([]);
+    // const [categoryData, setCategoryData] = useState([]);
+    // const [topProducts, setTopProducts] = useState([]);
+    // const [recentOrders, setRecentOrders] = useState([]);
+    const [revenueData, setRevenueData] = useState<RevenueItem[]>([]);
+    const [categoryData, setCategoryData] = useState<CategoryItem[]>([]);
+    const [topProducts, setTopProducts] = useState<TopProduct[]>([]);
+    const [recentOrders, setRecentOrders] = useState<RecentOrder[]>([]);
 
     useEffect(() => {
         fetchDashboardData();
@@ -129,16 +159,6 @@ const AdminDashboard = () => {
         });
     };
 
-    type RevenueItem = {
-        date: string;
-        revenue: number;
-        orders: number;
-    };
-
-    type GroupedData = {
-        [key: string]: RevenueItem;
-    };
-
     const fetchRevenueData = async () => {
         const startDate = getStartDate(timeRange);
         const { data: orders } = await supabase
@@ -150,17 +170,13 @@ const AdminDashboard = () => {
 
         if (!orders) return;
 
-        // const groupedData = orders.reduce((acc, order) => {
-        const groupedData = orders.reduce<GroupedData>((acc, order) => {
+        const groupedData = orders.reduce<Record<string, RevenueItem>>((acc, order) => {
             const date = new Date(order.created_at).toLocaleDateString('en-US', { weekday: 'short' });
-
             if (!acc[date]) {
                 acc[date] = { date, revenue: 0, orders: 0 };
             }
-
             acc[date].revenue += parseFloat(order.total_amount);
             acc[date].orders += 1;
-
             return acc;
         }, {});
 
