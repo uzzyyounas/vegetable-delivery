@@ -1,15 +1,3 @@
-// import { updateSession } from './lib/supabase/middleware'
-//
-// export async function middleware(request: NextRequest) {
-//     return await updateSession(request)
-// }
-//
-// export const config = {
-//     matcher: [
-//         '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
-//     ],
-// }
-
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
@@ -22,11 +10,14 @@ export async function middleware(request: NextRequest) {
         process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
         {
             cookies: {
-                get: (name) => request.cookies.get(name)?.value,
-                set: (name, value, options) =>
-                    response.cookies.set({ name, value, ...options }),
-                remove: (name, options) =>
-                    response.cookies.set({ name, value: '', ...options }),
+                getAll() {
+                    return request.cookies.getAll()
+                },
+                setAll(cookies) {
+                    cookies.forEach(({ name, value, options }) => {
+                        response.cookies.set(name, value, options)
+                    })
+                },
             },
         }
     )
@@ -35,21 +26,23 @@ export async function middleware(request: NextRequest) {
         data: { user },
     } = await supabase.auth.getUser()
 
+    // 🔒 Not logged in
     if (!user) {
         return NextResponse.redirect(
             new URL('/login?admin=true', request.url)
         )
     }
 
+    // 🔍 Check role
     const { data: profile } = await supabase
         .from('profiles')
         .select('role')
         .eq('id', user.id)
         .single()
 
+    // 🚫 Not admin
     if (profile?.role !== 'admin') {
         return NextResponse.redirect(
-            // new URL('/shop?error=admin-access', request.url)
             new URL('/access-denied', request.url)
         )
     }
